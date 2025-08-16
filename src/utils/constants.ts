@@ -6,7 +6,7 @@
 export const PORT = process.env.PORT ? parseInt(process.env.PORT) : 80;
 export const PACKAGE_NAME = process.env.PACKAGE_NAME;
 export const AUGMENTOS_API_KEY = process.env.AUGMENTOS_API_KEY;
-export const FINANCIAL_API_KEY = process.env.FINANCIAL_API_KEY;
+export const ALPHA_VANTAGE_API_KEY = process.env.ALPHA_VANTAGE_API_KEY;
 
 // App configuration
 export const APP_VERSION = '1.0.0';
@@ -48,7 +48,7 @@ export const VOICE_PATTERNS = {
 export const ERROR_MESSAGES = {
   MISSING_API_KEY: 'AUGMENTOS_API_KEY environment variable is required.',
   MISSING_PACKAGE_NAME: 'PACKAGE_NAME environment variable is required.',
-  MISSING_FINANCIAL_API_KEY: 'FINANCIAL_API_KEY environment variable is required.',
+  MISSING_ALPHA_VANTAGE_API_KEY: 'ALPHA_VANTAGE_API_KEY environment variable is optional (for Alpha Vantage fallback).',
   INVALID_TICKER: 'Invalid ticker symbol provided.',
   STOCK_NOT_FOUND: 'Stock not found in watchlist.',
   WATCHLIST_FULL: 'Watchlist is full. Remove a stock or pin important ones.',

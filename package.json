@@ -10,13 +10,21 @@
     "dev:mock": "tsx watch src/mock/StockTrackerApp-mock.ts",
     "build": "tsc",
     "test": "ts-node src/mock/test-mock-data.ts",
+    "test:real": "ts-node src/test-real-api.ts",
+    "test:lookup": "ts-node src/test-company-lookup.ts",
+    "test:database": "ts-node src/test-ticker-database.ts",
+    "test:integration": "ts-node src/test-integration.ts",
+    "verify": "ts-node src/verify-app.ts",
     "clean": "rm -rf dist",
     "rebuild": "npm run clean && npm run build",
     "bun:start": "bun run src/app/StockTrackerApp.ts",
     "bun:start:mock": "bun run src/mock/StockTrackerApp-mock.ts",
     "bun:dev": "bun --watch src/app/StockTrackerApp.ts",
     "bun:dev:mock": "bun --watch src/mock/StockTrackerApp-mock.ts",
-    "bun:test": "bun run src/mock/test-mock-data.ts"
+    "bun:test": "bun run src/mock/test-mock-data.ts",
+    "bun:test:real": "bun run src/test-real-api.ts",
+    "bun:test:lookup": "bun run src/test-company-lookup.ts",
+    "bun:verify": "bun run src/verify-app.ts"
   },
   "keywords": [
     "mentra",

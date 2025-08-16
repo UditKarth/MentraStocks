@@ -9,12 +9,13 @@ import {
 } from '@mentra/sdk';
 import axios from 'axios';
 import express from 'express';
+import { stockApiManager } from '../utils/stock-api';
+import { CompanyLookup } from '../utils/company-lookup';
 
 // Configuration constants
 const PORT = process.env.PORT ? parseInt(process.env.PORT) : 80;
 const PACKAGE_NAME = process.env.PACKAGE_NAME;
 const AUGMENTOS_API_KEY = process.env.AUGMENTOS_API_KEY;
-const FINANCIAL_API_KEY = process.env.FINANCIAL_API_KEY;
 
 // Verify env vars are set.
 if (!AUGMENTOS_API_KEY) {
@@ -22,9 +23,6 @@ if (!AUGMENTOS_API_KEY) {
 }
 if (!PACKAGE_NAME) {
   throw new Error('PACKAGE_NAME environment variable is required.');
-}
-if (!FINANCIAL_API_KEY) {
-  throw new Error('FINANCIAL_API_KEY environment variable is required.');
 }
 
 // Data Models
@@ -312,13 +310,14 @@ class StockTrackerApp extends AppServer {
       cleanupFunctions.push(metricSystemCleanup);
 
       // Set up head position detection for dashboard visibility
-      if (session.capabilities?.headPosition) {
-        const headPositionCleanup = session.events.onHeadPosition((data) => {
-          console.log('Head position changed', { position: data.position });
-          // Could be used to show/hide dashboard based on head position
-        });
-        cleanupFunctions.push(headPositionCleanup);
-      }
+      // Note: headPosition capability not available in current SDK version
+      // if (session.capabilities?.headPosition) {
+      //   const headPositionCleanup = session.events.onHeadPosition((data) => {
+      //     console.log('Head position changed', { position: data.position });
+      //     // Could be used to show/hide dashboard based on head position
+      //   });
+      //   cleanupFunctions.push(headPositionCleanup);
+      // }
 
       // Set up button press handling if available
       if (session.capabilities?.button) {
@@ -373,7 +372,7 @@ class StockTrackerApp extends AppServer {
   /**
    * Handles voice commands from the user
    */
-  private handleVoiceCommand(session: AppSession, userId: string, data: TranscriptionData): void {
+  private async handleVoiceCommand(session: AppSession, userId: string, data: TranscriptionData): Promise<void> {
     const transcript = data.text.toLowerCase();
     console.log('Processing voice command', { 
       transcript, 
@@ -389,7 +388,7 @@ class StockTrackerApp extends AppServer {
     // Parse commands
     if (transcript.includes('add') || transcript.includes('focus on')) {
       console.log('Processing add stock command', { transcript });
-      this.handleAddStock(session, userId, transcript);
+      await this.handleAddStock(session, userId, transcript);
     } else if (transcript.includes('pin')) {
       console.log('Processing pin stock command', { transcript });
       this.handlePinStock(session, userId, transcript);
@@ -413,26 +412,80 @@ class StockTrackerApp extends AppServer {
   /**
    * Handles adding a stock to the watchlist
    */
-  private handleAddStock(session: AppSession, userId: string, transcript: string): void {
+  private async handleAddStock(session: AppSession, userId: string, transcript: string): Promise<void> {
     // Extract stock name/ticker from transcript
-    const addMatch = transcript.match(/(?:add|focus on)\s+([a-zA-Z]+)/);
+    const addMatch = transcript.match(/(?:add|focus on)\s+([a-zA-Z\s]+)/);
     if (addMatch) {
-      const ticker = addMatch[1].toUpperCase();
-      this.addStock(userId, ticker);
-      this.saveWatchlist(userId, session);
+      const companyName = addMatch[1].trim();
       
-      // Show confirmation in main view
-      session.layouts.showDoubleTextWall(
-        'Stock Added',
-        `${ticker} added to watchlist`,
-        {
-          view: ViewType.MAIN,
-          durationMs: 3000
+      // First, try to use it as a direct ticker
+      if (companyName.length <= 5 && /^[A-Z]+$/.test(companyName.toUpperCase())) {
+        // Likely a ticker symbol
+        const ticker = companyName.toUpperCase();
+        this.addStock(userId, ticker);
+        this.saveWatchlist(userId, session);
+        
+        session.layouts.showDoubleTextWall(
+          'Stock Added',
+          `${ticker} added to watchlist`,
+          {
+            view: ViewType.MAIN,
+            durationMs: 3000
+          }
+        );
+        
+        this.updateWatchlistData(userId, session);
+        console.log('Stock added to watchlist', { ticker, userId });
+        return;
+      }
+      
+      // Try company name lookup
+      try {
+        const lookupResult = await CompanyLookup.lookupCompany(companyName);
+        
+        if (lookupResult.success && lookupResult.results.length > 0) {
+          const bestMatch = lookupResult.results[0];
+          const ticker = bestMatch.ticker;
+          
+          this.addStock(userId, ticker);
+          this.saveWatchlist(userId, session);
+          
+          // Show confirmation with company name
+          session.layouts.showDoubleTextWall(
+            'Stock Added',
+            `${companyName} (${ticker}) added to watchlist`,
+            {
+              view: ViewType.MAIN,
+              durationMs: 4000
+            }
+          );
+          
+          this.updateWatchlistData(userId, session);
+          console.log('Stock added to watchlist via lookup', { companyName, ticker, userId });
+        } else {
+          // Show error if no matches found
+          session.layouts.showDoubleTextWall(
+            'Company Not Found',
+            `Could not find "${companyName}". Try using the ticker symbol.`,
+            {
+              view: ViewType.MAIN,
+              durationMs: 5000
+            }
+          );
+          console.log('Company lookup failed', { companyName, error: lookupResult.error });
         }
-      );
-      
-      this.updateWatchlistData(userId, session);
-      session.logger.info('Stock added to watchlist', { ticker, userId });
+      } catch (error) {
+        // Show error if lookup fails
+        session.layouts.showDoubleTextWall(
+          'Lookup Error',
+          `Error looking up "${companyName}". Try using the ticker symbol.`,
+          {
+            view: ViewType.MAIN,
+            durationMs: 5000
+          }
+        );
+        console.error('Company lookup error', { companyName, error });
+      }
     }
   }
 
@@ -461,10 +514,10 @@ class StockTrackerApp extends AppServer {
           );
           
           this.updateWatchlistData(userId, session);
-          session.logger.info('Stock pinned', { ticker, userId });
+          console.log('Stock pinned', { ticker, userId });
         } else {
           // Show error if stock not found
-          session.logger.warn('Attempted to pin non-existent stock', { ticker, userId });
+                      console.log('Attempted to pin non-existent stock', { ticker, userId });
           session.layouts.showDoubleTextWall(
             'Stock Not Found',
             `${ticker} is not in your watchlist`,
@@ -503,10 +556,10 @@ class StockTrackerApp extends AppServer {
           );
           
           this.updateWatchlistData(userId, session);
-          session.logger.info('Stock removed from watchlist', { ticker, userId });
+          console.log('Stock removed from watchlist', { ticker, userId });
         } else if (stockIndex !== -1 && watchlist[stockIndex].isPinned) {
           // Show error if stock is pinned
-          session.logger.warn('Attempted to remove pinned stock', { ticker, userId });
+                      console.log('Attempted to remove pinned stock', { ticker, userId });
           session.layouts.showDoubleTextWall(
             'Cannot Remove',
             `${ticker} is pinned. Unpin first.`,
@@ -517,7 +570,7 @@ class StockTrackerApp extends AppServer {
           );
         } else {
           // Show error if stock not found
-          session.logger.warn('Attempted to remove non-existent stock', { ticker, userId });
+          console.log('Attempted to remove non-existent stock', { ticker, userId });
           session.layouts.showDoubleTextWall(
             'Stock Not Found',
             `${ticker} is not in your watchlist`,
@@ -535,7 +588,7 @@ class StockTrackerApp extends AppServer {
    * Handles price alert requests (acknowledges for now)
    */
   private handlePriceAlert(session: AppSession, userId: string, transcript: string): void {
-    session.logger.info('Price alert requested', { transcript, userId });
+    console.log('Price alert requested', { transcript, userId });
     // TODO: Implement full alert logic in future version
   }
 
@@ -818,24 +871,11 @@ class StockTrackerApp extends AppServer {
   }
 
   /**
-   * Fetches stock data from the financial API
+   * Fetches stock data using the multi-provider API manager
    */
   private async fetchStockData(ticker: string, timeframe: string): Promise<StockApiResponse | null> {
     try {
-      // Using a mock API endpoint - replace with actual financial API
-      const response = await axios.get(`https://api.financialdata.com/v1/quote`, {
-        params: {
-          symbol: ticker,
-          apikey: FINANCIAL_API_KEY,
-          timeframe: timeframe
-        },
-        timeout: 5000
-      });
-
-      return {
-        price: response.data.price,
-        changePercent: response.data.changePercent
-      };
+      return await stockApiManager.fetchStockData(ticker, timeframe);
     } catch (error) {
       console.error('Error fetching stock data', { ticker, timeframe, error: error.message });
       return null;
