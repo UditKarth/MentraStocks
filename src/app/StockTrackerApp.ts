@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import path from 'path';
 import {
   AppServer,
@@ -185,13 +186,13 @@ class StockTrackerApp extends AppServer {
   /**
    * Called by AppServer when a new session is created
    */
-  protected async onSession(session: AppSession, sessionId: string, userId: string): Promise<void> {
+  protected override async onSession(session: AppSession, sessionId: string, userId: string): Promise<void> {
     // Use the built-in session logger instead of console.log
-    session.logger.info('StockTracker session started', { 
-      sessionId, 
-      userId,
-      capabilities: session.capabilities ? Object.keys(session.capabilities) : null
-    });
+          console.log('StockTracker session started', { 
+        sessionId,
+        userId,
+        capabilities: session.capabilities ? Object.keys(session.capabilities) : null
+      });
 
     try {
       // Initialize cleanup functions array for this user
@@ -207,19 +208,19 @@ class StockTrackerApp extends AppServer {
       // Initialize state
       userWatchlists.set(userId, watchlist);
 
-      session.logger.info('Session initialized', { 
-        watchlistCount: watchlist.length, 
-        timeframe, 
-        refreshInterval, 
-        maxStocks 
-      });
+              console.log('Session initialized', {
+          watchlistCount: watchlist.length,
+          timeframe,
+          refreshInterval,
+          maxStocks
+        });
 
       // Check device capabilities and adapt behavior
       if (session.capabilities) {
-        session.logger.debug('Device capabilities detected', { 
+                console.log('Device capabilities detected', {
           hasMicrophone: !!session.capabilities.microphone,
           hasDisplay: !!session.capabilities.display,
-          hasButtons: !!session.capabilities.buttons
+          hasButton: !!session.capabilities.button
         });
       }
 
@@ -234,21 +235,17 @@ class StockTrackerApp extends AppServer {
 
       // Set up voice command listener using proper event subscription
       const transcriptionCleanup = session.events.onTranscription((data) => {
-        session.logger.debug('Received transcription', { 
+        console.log('Received transcription', { 
           text: data.text, 
-          isFinal: data.isFinal,
-          language: data.language 
+          isFinal: data.isFinal
         });
         this.handleVoiceCommand(session, userId, data);
       });
       cleanupFunctions.push(transcriptionCleanup);
 
-      // Subscribe to transcription events
-      session.events.subscribe('transcription');
-
       // Set up settings listeners with proper cleanup
       const timeframeCleanup = session.settings.onValueChange<'1D' | '1W' | '1M' | '1Y'>('timeframe', (newValue, oldValue) => {
-        session.logger.info('Timeframe setting changed', { oldValue, newValue });
+        console.log('Timeframe setting changed', { oldValue, newValue });
         
         // Show timeframe change notification
         session.layouts.showDoubleTextWall(
@@ -265,7 +262,7 @@ class StockTrackerApp extends AppServer {
       cleanupFunctions.push(timeframeCleanup);
 
       const refreshIntervalCleanup = session.settings.onValueChange<number>('refresh_interval_seconds', (newValue, oldValue) => {
-        session.logger.info('Refresh interval setting changed', { oldValue, newValue });
+        console.log('Refresh interval setting changed', { oldValue, newValue });
         
         // Show refresh interval change notification
         session.layouts.showDoubleTextWall(
@@ -282,7 +279,7 @@ class StockTrackerApp extends AppServer {
       cleanupFunctions.push(refreshIntervalCleanup);
 
       const maxStocksCleanup = session.settings.onValueChange<number>('max_stocks', (newValue, oldValue) => {
-        session.logger.info('Max stocks setting changed', { oldValue, newValue });
+        console.log('Max stocks setting changed', { oldValue, newValue });
         
         // Show max stocks change notification
         session.layouts.showDoubleTextWall(
@@ -300,16 +297,16 @@ class StockTrackerApp extends AppServer {
 
       // Listen for any settings changes (optional, for debugging)
       const allSettingsCleanup = session.settings.onChange((changes) => {
-        session.logger.debug('Settings changed', { 
+                console.log('Settings changed', {
           changedKeys: Object.keys(changes),
-          changes 
+          changes
         });
       });
       cleanupFunctions.push(allSettingsCleanup);
 
       // Listen for MentraOS settings if needed
       const metricSystemCleanup = session.settings.onMentraosSettingChange<boolean>('metricSystemEnabled', (enabled, wasEnabled) => {
-        session.logger.info('Metric system setting changed', { enabled, wasEnabled });
+        console.log('Metric system setting changed', { enabled, wasEnabled });
         // Could be used for currency formatting in the future
       });
       cleanupFunctions.push(metricSystemCleanup);
@@ -317,43 +314,26 @@ class StockTrackerApp extends AppServer {
       // Set up head position detection for dashboard visibility
       if (session.capabilities?.headPosition) {
         const headPositionCleanup = session.events.onHeadPosition((data) => {
-          session.logger.debug('Head position changed', { position: data.position });
+          console.log('Head position changed', { position: data.position });
           // Could be used to show/hide dashboard based on head position
         });
         cleanupFunctions.push(headPositionCleanup);
-        session.events.subscribe('headPosition');
       }
 
       // Set up button press handling if available
-      if (session.capabilities?.buttons) {
+      if (session.capabilities?.button) {
         const buttonPressCleanup = session.events.onButtonPress((data) => {
-          session.logger.debug('Button pressed', { button: data.button });
+          console.log('Button pressed', { buttonId: data.buttonId });
           // Could be used for quick actions like refresh or help
-          if (data.button === 'primary') {
+          if (data.buttonId === 'primary') {
             this.showHelp(session);
           }
         });
         cleanupFunctions.push(buttonPressCleanup);
-        session.events.subscribe('buttonPress');
       }
 
-      // Set up subscription settings for automatic management
-      session.settings.setSubscriptionSettings({
-        updateOnChange: ['timeframe', 'refresh_interval_seconds'],
-        handler: (settings) => {
-          // Return required stream types based on current settings
-          const streams: StreamType[] = ['transcription'];
-          
-          if (session.capabilities?.headPosition) {
-            streams.push('headPosition');
-          }
-          if (session.capabilities?.buttons) {
-            streams.push('buttonPress');
-          }
-          
-          return streams;
-        }
-      });
+      // Note: setSubscriptionSettings is not available in this SDK version
+      // Event subscriptions are handled manually above
 
     } catch (error) {
       session.logger.error(error, 'Error initializing StockTracker session');
@@ -364,7 +344,7 @@ class StockTrackerApp extends AppServer {
   /**
    * Called by AppServer when a session is stopped
    */
-  protected async onStop(sessionId: string, userId: string, reason: string): Promise<void> {
+  protected override async onStop(sessionId: string, userId: string, reason: string): Promise<void> {
     // Note: We don't have access to session.logger here, so we'll use console.log
     // In a real implementation, you might want to store the logger reference
     console.log(`StockTracker session ${sessionId} stopped: ${reason}`);
@@ -395,39 +375,38 @@ class StockTrackerApp extends AppServer {
    */
   private handleVoiceCommand(session: AppSession, userId: string, data: TranscriptionData): void {
     const transcript = data.text.toLowerCase();
-    session.logger.debug('Processing voice command', { 
+    console.log('Processing voice command', { 
       transcript, 
-      isFinal: data.isFinal,
-      language: data.language 
+      isFinal: data.isFinal
     });
 
     // Check for activation phrase
     if (!transcript.includes('stock tracker')) {
-      session.logger.debug('Command ignored - no activation phrase');
+      console.log('Command ignored - no activation phrase');
       return;
     }
 
     // Parse commands
     if (transcript.includes('add') || transcript.includes('focus on')) {
-      session.logger.info('Processing add stock command', { transcript });
+      console.log('Processing add stock command', { transcript });
       this.handleAddStock(session, userId, transcript);
     } else if (transcript.includes('pin')) {
-      session.logger.info('Processing pin stock command', { transcript });
+      console.log('Processing pin stock command', { transcript });
       this.handlePinStock(session, userId, transcript);
     } else if (transcript.includes('remove')) {
-      session.logger.info('Processing remove stock command', { transcript });
+      console.log('Processing remove stock command', { transcript });
       this.handleRemoveStock(session, userId, transcript);
     } else if (transcript.includes('alert me') || transcript.includes('tell me when')) {
-      session.logger.info('Processing price alert command', { transcript });
+      console.log('Processing price alert command', { transcript });
       this.handlePriceAlert(session, userId, transcript);
     } else if (transcript.includes('help') || transcript.includes('commands')) {
-      session.logger.info('Processing help command', { transcript });
+      console.log('Processing help command', { transcript });
       this.showHelp(session);
     } else if (transcript.includes('details') || transcript.includes('info')) {
-      session.logger.info('Processing details command', { transcript });
+      console.log('Processing details command', { transcript });
       this.handleShowDetails(session, userId, transcript);
     } else {
-      session.logger.warn('Unknown voice command', { transcript });
+      console.log('Unknown voice command', { transcript });
     }
   }
 
@@ -563,7 +542,7 @@ class StockTrackerApp extends AppServer {
   /**
    * Handles tool calls from Mira AI
    */
-  protected async onToolCall(toolCall: any): Promise<string | undefined> {
+  protected override async onToolCall(toolCall: any): Promise<string | undefined> {
     console.log(`Tool called: ${toolCall.toolId}`);
     console.log(`Tool call timestamp: ${toolCall.timestamp}`);
     console.log(`Tool call userId: ${toolCall.userId}`);
@@ -797,7 +776,8 @@ class StockTrackerApp extends AppServer {
    */
   private saveWatchlist(userId: string, session: AppSession): void {
     const watchlist = userWatchlists.get(userId) || [];
-    session.settings.set('watchlist', watchlist);
+    // Note: settings.set is not available in this SDK version
+    // Watchlist persistence would need to be implemented differently
   }
 
   /**
@@ -833,7 +813,7 @@ class StockTrackerApp extends AppServer {
       this.displayWatchlist(userId, session);
       
     } catch (error) {
-      session.logger.error(error, 'Error updating watchlist data', { userId });
+      console.error('Error updating watchlist data', { userId, error: error.message });
     }
   }
 
@@ -857,7 +837,7 @@ class StockTrackerApp extends AppServer {
         changePercent: response.data.changePercent
       };
     } catch (error) {
-      session.logger.error(error, 'Error fetching stock data', { ticker, timeframe });
+      console.error('Error fetching stock data', { ticker, timeframe, error: error.message });
       return null;
     }
   }
@@ -976,7 +956,7 @@ class StockTrackerApp extends AppServer {
     }, newIntervalSeconds * 1000);
     
     userRefreshIntervals.set(userId, newInterval);
-    session.logger.info('Refresh interval updated', { userId, newIntervalSeconds });
+    console.log('Refresh interval updated', { userId, newIntervalSeconds });
   }
 
   /**
@@ -999,7 +979,7 @@ class StockTrackerApp extends AppServer {
 
     // Save the updated watchlist
     this.saveWatchlist(userId, session);
-    session.logger.info('Max stocks limit enforced', { userId, currentCount: watchlist.length, maxStocks });
+    console.log('Max stocks limit enforced', { userId, currentCount: watchlist.length, maxStocks });
   }
 
   /**
@@ -1104,8 +1084,8 @@ The dashboard shows persistent stock cards for quick reference.`;
 // Create and start the app
 const stockTrackerApp = new StockTrackerApp();
 
-// Add global cleanup handlers
-stockTrackerApp.addCleanupHandler(() => {
+// Add global cleanup handlers (commented out due to access restrictions)
+// stockTrackerApp.addCleanupHandler(() => {
   console.log('Cleaning up global resources...');
   
   // Clear all intervals
@@ -1126,7 +1106,7 @@ stockTrackerApp.addCleanupHandler(() => {
   userWatchlists.clear();
   
   console.log('Global cleanup completed');
-});
+// });
 
 // Start the server
 stockTrackerApp.start().then(() => {

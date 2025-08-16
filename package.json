@@ -6,8 +6,8 @@
   "scripts": {
     "start": "ts-node src/app/StockTrackerApp.ts",
     "start:mock": "ts-node src/mock/StockTrackerApp-mock.ts",
-    "dev": "ts-node --watch src/app/StockTrackerApp.ts",
-    "dev:mock": "ts-node --watch src/mock/StockTrackerApp-mock.ts",
+    "dev": "tsx watch src/app/StockTrackerApp.ts",
+    "dev:mock": "tsx watch src/mock/StockTrackerApp-mock.ts",
     "build": "tsc",
     "test": "ts-node src/mock/test-mock-data.ts",
     "clean": "rm -rf dist",
@@ -29,12 +29,15 @@
   "license": "MIT",
   "dependencies": {
     "@mentra/sdk": "^2.1.12",
-    "axios": "^1.6.0"
+    "axios": "^1.6.0",
+    "dotenv": "^17.2.1",
+    "node-fetch": "^3.3.2"
   },
   "devDependencies": {
     "@types/express": "^5.0.3",
     "@types/node": "^20.0.0",
-    "ts-node": "^10.9.0",
+    "ts-node": "^10.9.2",
+    "tsx": "^4.0.0",
     "typescript": "^5.0.0"
   },
   "engines": {
