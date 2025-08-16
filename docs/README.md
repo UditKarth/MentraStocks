@@ -168,9 +168,47 @@ The app uses global maps for user state:
 
 ## Development
 
-### Building
+### Development Setup
+
+#### Using npm
 ```bash
-npm run build
+# Install dependencies
+npm install
+
+# Development (with hot reload)
+npm run dev          # Main app
+npm run dev:mock     # Mock version
+
+# Production
+npm start            # Run app directly
+npm run start:mock   # Run mock app directly
+
+# Testing
+npm test             # Run tests
+```
+
+#### Using bun (Recommended - Faster)
+```bash
+# Install dependencies
+bun install
+
+# Development (with hot reload)
+bun run dev          # Main app
+bun run dev:mock     # Mock version
+
+# Production
+bun run start        # Run app directly
+bun run start:mock   # Run mock app directly
+
+# Testing
+bun run test         # Run tests
+```
+
+#### Build Commands
+```bash
+npm run build        # Compile TypeScript to JavaScript
+npm run clean        # Remove dist folder
+npm run rebuild      # Clean and rebuild
 ```
 
 ### TypeScript Configuration

@@ -1,0 +1,20 @@
+[install]
+# Use exact versions for better reproducibility
+exact = true
+
+[install.scopes]
+# Configure any scoped packages if needed
+
+[test]
+# Test configuration
+preload = ["./src/mock/test-mock-data.ts"]
+
+[run]
+# Runtime configuration
+bun = true
+
+[build]
+# Build configuration
+target = "node"
+minify = false
+sourcemap = true
