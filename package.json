@@ -1,0 +1,35 @@
+{
+  "name": "stocktracker-app",
+  "version": "1.0.0",
+  "description": "StockTracker application for smart glasses using @mentra/sdk",
+  "main": "src/app/StockTrackerApp.ts",
+  "scripts": {
+    "start": "ts-node src/app/StockTrackerApp.ts",
+    "start:mock": "ts-node src/mock/StockTrackerApp-mock.ts",
+    "dev": "ts-node --watch src/app/StockTrackerApp.ts",
+    "dev:mock": "ts-node --watch src/mock/StockTrackerApp-mock.ts",
+    "build": "tsc",
+    "test": "ts-node src/mock/test-mock-data.ts"
+  },
+  "keywords": [
+    "mentra",
+    "smart-glasses",
+    "stock-tracker",
+    "typescript",
+    "ar"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@mentra/sdk": "^1.0.0",
+    "axios": "^1.6.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "ts-node": "^10.9.0",
+    "typescript": "^5.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

@@ -1,0 +1,17 @@
+# StockTracker Application Environment Variables
+# Copy these to your environment or create a .env file
+
+# Required: Your application package name from @mentra/sdk
+PACKAGE_NAME=your-stocktracker-app
+
+# Required: Your AugmentOS API key
+AUGMENTOS_API_KEY=your-augmentos-api-key-here
+
+# Required: Your financial data API key (Alpha Vantage, Yahoo Finance, etc.)
+FINANCIAL_API_KEY=your-financial-api-key-here
+
+# Optional: Server port (defaults to 80)
+PORT=80
+
+# Optional: Node environment
+NODE_ENV=production

@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>StockTracker - Smart Glasses App</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: white;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+        }
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 2.5em;
+            font-weight: 700;
+        }
+        .subtitle {
+            text-align: center;
+            font-size: 1.2em;
+            margin-bottom: 40px;
+            opacity: 0.9;
+        }
+        .features {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 40px;
+        }
+        .feature {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 20px;
+            border-radius: 15px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        .feature h3 {
+            margin-top: 0;
+            color: #ffd700;
+        }
+        .api-section {
+            background: rgba(0, 0, 0, 0.2);
+            padding: 20px;
+            border-radius: 15px;
+            margin-bottom: 20px;
+        }
+        .api-section h3 {
+            color: #ffd700;
+            margin-top: 0;
+        }
+        .endpoint {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 10px;
+            border-radius: 8px;
+            margin: 10px 0;
+            font-family: 'Courier New', monospace;
+        }
+        .status {
+            text-align: center;
+            padding: 20px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            margin-top: 20px;
+        }
+        .status-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #4CAF50;
+            margin-right: 10px;
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+        .footer {
+            text-align: center;
+            margin-top: 40px;
+            opacity: 0.7;
+            font-size: 0.9em;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📈 StockTracker</h1>
+        <p class="subtitle">Smart stock tracking for smart glasses powered by @mentra/sdk</p>
+        
+        <div class="features">
+            <div class="feature">
+                <h3>🎯 Voice Commands</h3>
+                <p>Control your watchlist with natural voice commands. Add, remove, and pin stocks effortlessly.</p>
+            </div>
+            <div class="feature">
+                <h3>🤖 AI Integration</h3>
+                <p>Full Mira AI integration with 7 comprehensive tools for natural language stock management.</p>
+            </div>
+            <div class="feature">
+                <h3>📱 Smart Display</h3>
+                <p>Glanceable information optimized for smart glasses with periodic updates and clear formatting.</p>
+            </div>
+            <div class="feature">
+                <h3>⚙️ Configurable</h3>
+                <p>Customizable refresh intervals, timeframes, and watchlist limits to suit your preferences.</p>
+            </div>
+        </div>
+
+        <div class="api-section">
+            <h3>🔧 API Endpoints</h3>
+            <div class="endpoint">GET /health - Health check</div>
+            <div class="endpoint">GET /api/status - App status and metrics</div>
+            <div class="endpoint">GET /api/user/:userId/watchlist - Get user watchlist</div>
+            <div class="endpoint">POST /api/user/:userId/stock - Add stock to watchlist</div>
+            <div class="endpoint">POST /api/token - Generate JWT token</div>
+            <div class="endpoint">GET /api/stock/:ticker - Get stock data</div>
+        </div>
+
+        <div class="api-section">
+            <h3>🤖 AI Tools</h3>
+            <div class="endpoint">add_stock - Add stock to watchlist</div>
+            <div class="endpoint">remove_stock - Remove stock from watchlist</div>
+            <div class="endpoint">pin_stock - Pin stock in watchlist</div>
+            <div class="endpoint">get_watchlist - Get current watchlist</div>
+            <div class="endpoint">get_stock_price - Get stock price and change</div>
+            <div class="endpoint">set_timeframe - Set display timeframe</div>
+            <div class="endpoint">set_refresh_interval - Set refresh interval</div>
+        </div>
+
+        <div class="status">
+            <span class="status-indicator"></span>
+            <strong>Server Status:</strong> Running
+        </div>
+
+        <div class="footer">
+            <p>Built with @mentra/sdk | TypeScript | Express | AI Integration</p>
+            <p>Version 1.0.0 | MIT License</p>
+        </div>
+    </div>
+
+    <script>
+        // Simple status check
+        async function checkStatus() {
+            try {
+                const response = await fetch('/api/status');
+                const data = await response.json();
+                console.log('Server status:', data);
+            } catch (error) {
+                console.error('Status check failed:', error);
+            }
+        }
+
+        // Check status on page load
+        checkStatus();
+    </script>
+</body>
+</html>
