@@ -1,6 +1,8 @@
 /**
  * Comprehensive ticker symbol database for local company lookup
  * This replaces the need for external API calls for most company searches
+ * 
+ * OPTIMIZED: Better memory management and error handling
  */
 
 export interface TickerSymbol {
@@ -17,16 +19,18 @@ export const TickerSymbols: TickerSymbol[] = ImportedTickerSymbols;
 
 /**
  * Ticker Database Manager for efficient company lookups
+ * Optimized for memory usage and performance
  */
 export class TickerDatabase {
   private static instance: TickerDatabase;
   private symbolMap: Map<string, TickerSymbol>;
   private nameMap: Map<string, TickerSymbol[]>;
+  private isInitialized = false;
 
   private constructor() {
     this.symbolMap = new Map();
     this.nameMap = new Map();
-    this.buildIndexes();
+    // Don't build indexes immediately - wait for first use
   }
 
   /**
@@ -40,41 +44,46 @@ export class TickerDatabase {
   }
 
   /**
-   * Build search indexes for fast lookups
+   * Initialize indexes only when first needed
    */
-  private buildIndexes(): void {
-    // Build symbol index
-    TickerSymbols.forEach(ticker => {
-      this.symbolMap.set(ticker.symbol.toUpperCase(), ticker);
-    });
+  private initializeIndexes(): void {
+    if (this.isInitialized) return;
 
-    // Build name index with multiple variations
-    TickerSymbols.forEach(ticker => {
-      const name = ticker.name.toLowerCase();
-      const words = name.split(/\s+/);
+    try {
+      console.log('Initializing ticker database indexes...');
       
-      // Add full name
-      this.addToNameMap(name, ticker);
-      
-      // Add company name without common suffixes
-      const cleanName = name.replace(/\s+(inc\.?|corp\.?|corporation|company|co\.?|ltd\.?|limited|plc|ag|sa|se|nv|llc)$/i, '');
-      if (cleanName !== name) {
-        this.addToNameMap(cleanName, ticker);
-      }
-      
-      // Add first word (often the main company name)
-      if (words.length > 0) {
-        this.addToNameMap(words[0], ticker);
-      }
-      
-      // Add common abbreviations
-      if (name.includes('international')) {
-        this.addToNameMap(name.replace('international', 'intl'), ticker);
-      }
-      if (name.includes('technologies')) {
-        this.addToNameMap(name.replace('technologies', 'tech'), ticker);
-      }
-    });
+      // Build symbol index
+      TickerSymbols.forEach(ticker => {
+        this.symbolMap.set(ticker.symbol.toUpperCase(), ticker);
+      });
+
+      // Build name index with multiple variations (limited to reduce memory)
+      TickerSymbols.forEach(ticker => {
+        const name = ticker.name.toLowerCase();
+        const words = name.split(/\s+/);
+        
+        // Add full name
+        this.addToNameMap(name, ticker);
+        
+        // Add company name without common suffixes
+        const cleanName = name.replace(/\s+(inc\.?|corp\.?|corporation|company|co\.?|ltd\.?|limited|plc|ag|sa|se|nv|llc)$/i, '');
+        if (cleanName !== name) {
+          this.addToNameMap(cleanName, ticker);
+        }
+        
+        // Add first word (often the main company name)
+        if (words.length > 0) {
+          this.addToNameMap(words[0], ticker);
+        }
+      });
+
+      this.isInitialized = true;
+      console.log(`Ticker database initialized with ${this.symbolMap.size} symbols`);
+    } catch (error) {
+      console.error('Failed to initialize ticker database:', error);
+      // Continue with empty maps
+      this.isInitialized = true;
+    }
   }
 
   /**
@@ -91,13 +100,16 @@ export class TickerDatabase {
    * Search by ticker symbol (exact match)
    */
   searchBySymbol(symbol: string): TickerSymbol | undefined {
+    this.initializeIndexes();
     return this.symbolMap.get(symbol.toUpperCase());
   }
 
   /**
-   * Search by company name (fuzzy match)
+   * Search by company name (fuzzy match) - optimized for performance
    */
   searchByName(name: string, limit: number = 5): TickerSymbol[] {
+    this.initializeIndexes();
+    
     const query = name.toLowerCase().trim();
     const results: Array<{ ticker: TickerSymbol; score: number }> = [];
 
@@ -107,8 +119,21 @@ export class TickerDatabase {
       results.push({ ticker, score: 1.0 });
     });
 
-    // Partial matches
+    // If we have exact matches, return them immediately
+    if (results.length > 0) {
+      return results
+        .sort((a, b) => b.score - a.score)
+        .slice(0, limit)
+        .map(r => r.ticker);
+    }
+
+    // Partial matches - limit search to reduce memory usage
+    let searchCount = 0;
+    const maxSearch = 1000; // Limit search iterations
+
     for (const [indexName, tickers] of this.nameMap.entries()) {
+      if (searchCount++ > maxSearch) break; // Prevent excessive searching
+      
       if (indexName.includes(query) || query.includes(indexName)) {
         const similarity = this.calculateSimilarity(query, indexName);
         if (similarity > 0.3) { // Minimum similarity threshold
@@ -175,9 +200,21 @@ export class TickerDatabase {
    * Add a custom ticker to the database
    */
   addTicker(symbol: string, name: string): void {
+    this.initializeIndexes();
     const ticker: TickerSymbol = { symbol: symbol.toUpperCase(), name };
     TickerSymbols.push(ticker);
     this.symbolMap.set(symbol.toUpperCase(), ticker);
     this.addToNameMap(name.toLowerCase(), ticker);
+  }
+
+  /**
+   * Get memory usage statistics
+   */
+  getMemoryStats(): { symbolMapSize: number; nameMapSize: number; totalTickers: number } {
+    return {
+      symbolMapSize: this.symbolMap.size,
+      nameMapSize: this.nameMap.size,
+      totalTickers: TickerSymbols.length
+    };
   }
 }

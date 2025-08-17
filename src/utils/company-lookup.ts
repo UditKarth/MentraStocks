@@ -51,7 +51,7 @@ export class CompanyLookup {
       const tickerDb = this.getTickerDb();
       
       // Strategy 1: Try exact symbol match first
-      const symbolMatch = tickerDb.searchBySymbol(normalizedName.toUpperCase());
+      const symbolMatch = await tickerDb.searchBySymbol(normalizedName.toUpperCase());
       if (symbolMatch) {
         return {
           success: true,
@@ -64,7 +64,7 @@ export class CompanyLookup {
       }
 
       // Strategy 2: Search by company name
-      const nameMatches = tickerDb.searchByName(normalizedName, 5);
+      const nameMatches = await tickerDb.searchByName(normalizedName, 5);
       if (nameMatches.length > 0) {
         const results: CompanyInfo[] = nameMatches.map((ticker, index) => ({
           ticker: ticker.symbol,
@@ -97,27 +97,27 @@ export class CompanyLookup {
   /**
    * Get database statistics
    */
-  static getDatabaseStats(): { totalTickers: number } {
+  static async getDatabaseStats(): Promise<{ totalTickers: number }> {
     const tickerDb = this.getTickerDb();
     return {
-      totalTickers: tickerDb.getTotalCount()
+      totalTickers: await tickerDb.getTotalCount()
     };
   }
 
   /**
    * Add a custom ticker to the database
    */
-  static addTicker(symbol: string, name: string): void {
+  static async addTicker(symbol: string, name: string): Promise<void> {
     const tickerDb = this.getTickerDb();
-    tickerDb.addTicker(symbol, name);
+    await tickerDb.addTicker(symbol, name);
   }
 
   /**
    * Search by ticker symbol directly
    */
-  static searchBySymbol(symbol: string): CompanyInfo | null {
+  static async searchBySymbol(symbol: string): Promise<CompanyInfo | null> {
     const tickerDb = this.getTickerDb();
-    const result = tickerDb.searchBySymbol(symbol);
+    const result = await tickerDb.searchBySymbol(symbol);
     
     if (result) {
       return {
@@ -128,5 +128,13 @@ export class CompanyLookup {
     }
     
     return null;
+  }
+
+  /**
+   * Unload the database to free memory
+   */
+  static unloadDatabase(): void {
+    const tickerDb = this.getTickerDb();
+    tickerDb.unload();
   }
 }
