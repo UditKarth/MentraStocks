@@ -7,6 +7,20 @@ import axios from 'axios';
 export interface StockApiResponse {
   price: number;
   changePercent: number;
+  volume?: number;
+  marketCap?: number;
+  peRatio?: number;
+  dividendYield?: number;
+  dayRange?: {
+    low: number;
+    high: number;
+  };
+  yearRange?: {
+    low: number;
+    high: number;
+  };
+  openPrice?: number;
+  previousClose?: number;
 }
 
 /**
@@ -32,10 +46,13 @@ class YahooFinanceProvider {
 
       const data = response.data.chart.result[0];
       const quote = data.indicators.quote[0];
+      const meta = data.meta;
       
       // Get current and previous prices
       const currentPrice = quote.close[quote.close.length - 1];
       const previousPrice = quote.close[quote.close.length - 2] || quote.open[quote.open.length - 1];
+      const openPrice = quote.open[quote.open.length - 1];
+      const volume = quote.volume[quote.volume.length - 1];
       
       if (!currentPrice || !previousPrice) {
         return null;
@@ -43,9 +60,28 @@ class YahooFinanceProvider {
 
       const changePercent = ((currentPrice - previousPrice) / previousPrice) * 100;
 
+      // Calculate day range
+      const dayPrices = quote.close.slice(-1);
+      const dayRange = {
+        low: Math.min(...dayPrices.filter((p: number | null) => p !== null)),
+        high: Math.max(...dayPrices.filter((p: number | null) => p !== null))
+      };
+
+      // Calculate year range (approximate)
+      const yearPrices = quote.close.slice(-252); // ~1 year of trading days
+      const yearRange = {
+        low: Math.min(...yearPrices.filter((p: number | null) => p !== null)),
+        high: Math.max(...yearPrices.filter((p: number | null) => p !== null))
+      };
+
       return {
         price: currentPrice,
-        changePercent: changePercent
+        changePercent: changePercent,
+        volume: volume,
+        openPrice: openPrice,
+        previousClose: previousPrice,
+        dayRange: dayRange,
+        yearRange: yearRange
       };
     } catch (error) {
       console.error(`Yahoo Finance API error for ${ticker}:`, error.message);

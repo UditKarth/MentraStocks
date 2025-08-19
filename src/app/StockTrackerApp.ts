@@ -46,6 +46,7 @@ const userWatchlists: Map<string, Stock[]> = new Map();
 const userRefreshIntervals: Map<string, NodeJS.Timeout> = new Map();
 const userCleanupFunctions: Map<string, Array<() => void>> = new Map();
 const userLastActivity: Map<string, number> = new Map(); // Track user activity
+const userFocusState: Map<string, { ticker: string; isFocused: boolean }> = new Map(); // Track focus state
 
 // Voice detection state management
 const voiceDetectionState: Map<string, {
@@ -264,9 +265,8 @@ class VoiceDetectionManager {
    */
   private static showCommandFeedback(session: AppSession, title: string, message: string): void {
     try {
-      session.layouts.showDoubleTextWall(
-        title,
-        message,
+      session.layouts.showTextWall(
+        `${title}\n${message}`,
         {
           view: ViewType.MAIN,
           durationMs: 4000
@@ -282,9 +282,15 @@ class VoiceDetectionManager {
    */
   private static processVoiceCommand(session: AppSession, userId: string, transcript: string): void {
     // Parse commands
-    if (transcript.includes('add') || transcript.includes('focus on')) {
+    if (transcript.includes('add') || transcript.includes('at') || transcript.includes('ad')) {
       console.log('Processing add stock command', { transcript });
       this.handleAddStock(session, userId, transcript);
+    } else if (transcript.includes('focus on') || transcript.includes('focus ')) {
+      console.log('Processing focus command', { transcript });
+      this.handleFocusCommand(session, userId, transcript);
+    } else if (transcript.includes('view watchlist') || transcript.includes('show watchlist')) {
+      console.log('Processing view watchlist command', { transcript });
+      this.handleViewWatchlistCommand(session, userId);
     } else if (transcript.includes('pin')) {
       console.log('Processing pin stock command', { transcript });
       this.handlePinStock(session, userId, transcript);
@@ -384,6 +390,34 @@ class VoiceDetectionManager {
       } catch (error) {
         console.error('Error in handleShowDetails delegation:', error);
         this.showCommandFeedback(session, 'Error', 'Failed to process details command');
+      }
+    } else {
+      console.error('App instance not available for command delegation');
+      this.showCommandFeedback(session, 'Error', 'App not ready for commands');
+    }
+  }
+
+  private static handleFocusCommand(session: AppSession, userId: string, transcript: string): void {
+    if (this.appInstance) {
+      try {
+        this.appInstance.handleFocusCommand(session, userId, transcript);
+      } catch (error) {
+        console.error('Error in handleFocusCommand delegation:', error);
+        this.showCommandFeedback(session, 'Error', 'Failed to process focus command');
+      }
+    } else {
+      console.error('App instance not available for command delegation');
+      this.showCommandFeedback(session, 'Error', 'App not ready for commands');
+    }
+  }
+
+  private static handleViewWatchlistCommand(session: AppSession, userId: string): void {
+    if (this.appInstance) {
+      try {
+        this.appInstance.handleViewWatchlistCommand(session, userId);
+      } catch (error) {
+        console.error('Error in handleViewWatchlistCommand delegation:', error);
+        this.showCommandFeedback(session, 'Error', 'Failed to process view watchlist command');
       }
     } else {
       console.error('App instance not available for command delegation');
@@ -817,15 +851,12 @@ class StockTrackerApp extends AppServer {
           isFinal: data.isFinal
         });
         
-        // Use fallback voice detection for now to ensure it works
-        this.handleVoiceCommandFallback(session, userId, data);
-        
-        // TODO: Re-enable complex voice detection once delegation is fixed
-        // if (!VoiceDetectionManager.isAppInstanceSet()) {
-        //   console.log('Setting app instance for voice detection');
-        //   VoiceDetectionManager.setAppInstance(this);
-        // }
-        // VoiceDetectionManager.handleTranscription(session, userId, data);
+        // Use main voice detection manager
+        if (!VoiceDetectionManager.isAppInstanceSet()) {
+          console.log('Setting app instance for voice detection');
+          VoiceDetectionManager.setAppInstance(this);
+        }
+        VoiceDetectionManager.handleTranscription(session, userId, data);
       });
       cleanupFunctions.push(transcriptionCleanup);
 
@@ -856,9 +887,8 @@ class StockTrackerApp extends AppServer {
         console.log('Timeframe setting changed', { oldValue, newValue });
         
         // Show timeframe change notification
-        session.layouts.showDoubleTextWall(
-          'Timeframe Updated',
-          `Changed to ${newValue} view`,
+        session.layouts.showTextWall(
+          `Timeframe Updated\nChanged to ${newValue} view`,
           {
             view: ViewType.MAIN,
             durationMs: 3000
@@ -873,9 +903,8 @@ class StockTrackerApp extends AppServer {
         console.log('Refresh interval setting changed', { oldValue, newValue });
         
         // Show refresh interval change notification
-        session.layouts.showDoubleTextWall(
-          'Refresh Updated',
-          `Now refreshing every ${newValue} seconds`,
+        session.layouts.showTextWall(
+          `Refresh Updated\nNow refreshing every ${newValue} seconds`,
           {
             view: ViewType.MAIN,
             durationMs: 3000
@@ -890,9 +919,8 @@ class StockTrackerApp extends AppServer {
         console.log('Max stocks setting changed', { oldValue, newValue });
         
         // Show max stocks change notification
-        session.layouts.showDoubleTextWall(
-          'Limit Updated',
-          `Max stocks: ${newValue}`,
+        session.layouts.showTextWall(
+          `Limit Updated\nMax stocks: ${newValue}`,
           {
             view: ViewType.MAIN,
             durationMs: 3000
@@ -1021,8 +1049,8 @@ class StockTrackerApp extends AppServer {
       return;
     }
 
-    // Process commands directly
-    if (transcript.includes('add') || transcript.includes('at') || transcript.includes('ad') || transcript.includes('focus on')) {
+    // Process commands directly (only basic commands in fallback)
+    if (transcript.includes('add') || transcript.includes('at') || transcript.includes('ad')) {
       console.log('Processing add stock command', { transcript });
       await this.handleAddStock(session, userId, transcript);
     } else if (transcript.includes('help')) {
@@ -1030,6 +1058,8 @@ class StockTrackerApp extends AppServer {
       this.showHelp(session);
     } else {
       console.log('Unknown voice command', { transcript });
+      // Show unknown command feedback instead of failing silently
+      this.showUnknownCommandFeedback(session, transcript);
     }
   }
 
@@ -1063,14 +1093,14 @@ class StockTrackerApp extends AppServer {
    */
   private showInitialLayout(session: AppSession): void {
     try {
-      session.layouts.showDoubleTextWall(
-        '📈 Stock Tracker',
-        'Ready to track your stocks!\nSay "Stock tracker help" for commands.',
+      session.layouts.showTextWall(
+        '📈 Stock Tracker\nReady to track your stocks!\nSay "Stock tracker help" for commands.',
         {
           view: ViewType.MAIN,
           durationMs: 5000
         }
       );
+      console.log('Initial layout shown successfully');
     } catch (error) {
       console.error('Error showing initial layout:', error);
       // Fallback to simple text wall
@@ -1141,9 +1171,8 @@ class StockTrackerApp extends AppServer {
 
     if (data.isFinal) {
       // Final transcript - show in main view briefly
-      session.layouts.showDoubleTextWall(
-        '🎤 Heard:',
-        transcript,
+      session.layouts.showTextWall(
+        `🎤 Heard: ${transcript}`,
         {
           view: ViewType.MAIN,
           durationMs: 3000
@@ -1157,15 +1186,7 @@ class StockTrackerApp extends AppServer {
         this.showProcessingIndicator(session);
       }, 500);
     } else {
-      // Interim transcript - show in dashboard for real-time feedback
-      session.layouts.showDashboardCard(
-        '🎤 Listening:',
-        transcript.length > 30 ? transcript.substring(0, 30) + '...' : transcript,
-        {
-          view: ViewType.DASHBOARD,
-          durationMs: 1000 // Short duration for interim updates
-        }
-      );
+      // Interim transcript - don't show feedback to avoid layout conflicts
       // Show listening indicator during interim
       this.showListeningStatus(session, true);
     }
@@ -1247,6 +1268,184 @@ class StockTrackerApp extends AppServer {
   }
 
   /**
+   * Shows feedback for unknown commands
+   */
+  private showUnknownCommandFeedback(session: AppSession, transcript: string): void {
+    try {
+      session.layouts.showTextWall(
+        `❓ Unknown Command\n"${transcript}"\n\nTry saying:\n"Stock tracker help" for commands`,
+        {
+          view: ViewType.MAIN,
+          durationMs: 5000
+        }
+      );
+      console.log('Unknown command feedback shown for:', transcript);
+    } catch (error) {
+      console.error('Error showing unknown command feedback:', error);
+    }
+  }
+
+  /**
+   * Handles the focus command to show detailed stock information
+   */
+  async handleFocusCommand(session: AppSession, userId: string, transcript: string): Promise<void> {
+    // Extract stock name/ticker from transcript
+    const focusMatch = transcript.match(/(?:focus on|focus)\s+([a-zA-Z\s]+?)(?:[.,]|$)/);
+    if (!focusMatch) {
+      this.showCommandFeedback(session, '❌ Invalid Focus Command', 'Please specify a stock to focus on. Try: "Stock tracker focus on AAPL"');
+      return;
+    }
+
+    const companyName = focusMatch[1].trim();
+    console.log('Focus command for:', companyName);
+
+    try {
+      // First, try to use it as a direct ticker (only if it's exactly a valid ticker format)
+      if (companyName.length <= 5 && /^[A-Z]+$/.test(companyName.toUpperCase()) && companyName.length >= 2) {
+        // Check if this is actually a known ticker symbol
+        const tickerDb = TickerDatabase.getInstance();
+        const tickerMatch = tickerDb.searchBySymbol(companyName.toUpperCase());
+        
+        if (tickerMatch) {
+          // It's a valid ticker symbol
+          const ticker = companyName.toUpperCase();
+          const stockName = tickerMatch.name;
+          
+          // Fetch detailed stock data
+          const detailedData = await this.fetchDetailedStockData(ticker, session);
+          if (!detailedData) {
+            this.showCommandFeedback(session, '❌ Data Unavailable', `Could not fetch data for ${ticker}. Please try again.`);
+            return;
+          }
+
+          // Set focus state
+          userFocusState.set(userId, { ticker, isFocused: true });
+
+          // Show detailed stock view
+          this.showDetailedStockView(session, ticker, stockName, detailedData);
+          return;
+        }
+        // If not a valid ticker, continue to company name lookup
+      }
+      
+      // Try company name lookup
+      console.log('Looking up company name:', companyName);
+      const lookupResult = await CompanyLookup.lookupCompany(companyName);
+      console.log('Lookup result:', lookupResult);
+      
+      if (lookupResult.success && lookupResult.results.length > 0) {
+        const bestMatch = lookupResult.results[0];
+        const ticker = bestMatch.ticker;
+        const stockName = bestMatch.name;
+        
+        // Fetch detailed stock data
+        const detailedData = await this.fetchDetailedStockData(ticker, session);
+        if (!detailedData) {
+          this.showCommandFeedback(session, '❌ Data Unavailable', `Could not fetch data for ${ticker}. Please try again.`);
+          return;
+        }
+
+        // Set focus state
+        userFocusState.set(userId, { ticker, isFocused: true });
+
+        // Show detailed stock view
+        this.showDetailedStockView(session, ticker, stockName, detailedData);
+      } else {
+        // Show error if no matches found
+        this.showCommandFeedback(session, '❌ Company Not Found', `Could not find "${companyName}". Try using the ticker symbol.`);
+        console.log('Company lookup failed', { companyName, error: lookupResult.error });
+      }
+
+    } catch (error) {
+      console.error('Error in focus command:', error);
+      this.showCommandFeedback(session, '❌ Focus Error', `Error focusing on ${companyName}. Please try again.`);
+    }
+  }
+
+  /**
+   * Handles the view watchlist command to return to normal view
+   */
+  handleViewWatchlistCommand(session: AppSession, userId: string): void {
+    // Clear focus state
+    userFocusState.set(userId, { ticker: '', isFocused: false });
+
+    // Show watchlist
+    this.displayWatchlist(userId, session);
+    
+    this.showCommandFeedback(session, '📊 Watchlist View', 'Returned to watchlist view');
+  }
+
+  /**
+   * Fetches detailed stock data for focus view
+   */
+  private async fetchDetailedStockData(ticker: string, session: AppSession): Promise<any> {
+    try {
+      const timeframe = session.settings.get<'1D' | '1W' | '1M' | '1Y'>('timeframe', '1D');
+      return await stockApiManager.fetchStockData(ticker, timeframe);
+    } catch (error) {
+      console.error('Error fetching detailed stock data:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Shows detailed stock information in focus view
+   */
+  private showDetailedStockView(session: AppSession, ticker: string, stockName: string, data: any): void {
+    try {
+      const arrow = data.changePercent >= 0 ? '▲' : '▼';
+      const changeText = `${arrow}${Math.abs(data.changePercent).toFixed(2)}%`;
+      const changeColor = data.changePercent >= 0 ? '🟢' : '🔴';
+
+      let detailedText = `${stockName} (${ticker})\n`;
+      detailedText += `${changeColor} $${data.price.toFixed(2)} ${changeText}\n\n`;
+      
+      if (data.openPrice) {
+        detailedText += `Open: $${data.openPrice.toFixed(2)}\n`;
+      }
+      if (data.previousClose) {
+        detailedText += `Prev Close: $${data.previousClose.toFixed(2)}\n`;
+      }
+      if (data.dayRange) {
+        detailedText += `Day Range: $${data.dayRange.low.toFixed(2)} - $${data.dayRange.high.toFixed(2)}\n`;
+      }
+      if (data.yearRange) {
+        detailedText += `52W Range: $${data.yearRange.low.toFixed(2)} - $${data.yearRange.high.toFixed(2)}\n`;
+      }
+      if (data.volume) {
+        const volumeFormatted = this.formatVolume(data.volume);
+        detailedText += `Volume: ${volumeFormatted}\n`;
+      }
+
+      detailedText += `\nSay "Stock tracker view watchlist" to return`;
+
+      session.layouts.showTextWall(detailedText, {
+        view: ViewType.MAIN,
+        durationMs: 15000 // Show longer for detailed view
+      });
+
+      console.log('Detailed stock view shown for:', ticker);
+    } catch (error) {
+      console.error('Error showing detailed stock view:', error);
+      this.showCommandFeedback(session, '❌ Display Error', 'Error showing detailed stock information');
+    }
+  }
+
+  /**
+   * Formats volume numbers for display
+   */
+  private formatVolume(volume: number): string {
+    if (volume >= 1000000000) {
+      return `${(volume / 1000000000).toFixed(1)}B`;
+    } else if (volume >= 1000000) {
+      return `${(volume / 1000000).toFixed(1)}M`;
+    } else if (volume >= 1000) {
+      return `${(volume / 1000).toFixed(1)}K`;
+    }
+    return volume.toString();
+  }
+
+  /**
    * Handles adding a stock to the watchlist
    */
   private async handleAddStock(session: AppSession, userId: string, transcript: string): Promise<void> {
@@ -1257,7 +1456,7 @@ class StockTrackerApp extends AppServer {
     await new Promise(resolve => setTimeout(resolve, 100));
     
     // Extract stock name/ticker from transcript (improved regex to handle punctuation and common mistranscriptions)
-    const addMatch = transcript.match(/(?:add|at|ad|focus on)\s+([a-zA-Z\s]+?)(?:[.,]|$)/);
+    const addMatch = transcript.match(/(?:add|at|ad|focus on|focus)\s+([a-zA-Z\s]+?)(?:[.,]|$)/);
     if (addMatch) {
       const companyName = addMatch[1].trim();
       console.log('Extracted company name from voice command:', { 
@@ -1926,23 +2125,31 @@ Voice Commands:
    */
   private showHelp(session: AppSession): void {
     const helpText = `Voice Commands:
-• "Stock tracker add AAPL" - Add stock
-• "Stock tracker focus on NVIDIA" - Add stock
-• "Stock tracker pin Apple" - Pin stock
-• "Stock tracker remove Google" - Remove stock
-• "Stock tracker alert me if Tesla drops below 175" - Price alert
+• "Stock tracker add AAPL" - Add stock to watchlist
+• "Stock tracker focus on NVIDIA" - Show detailed stock info
+• "Stock tracker focus Apple" - Focus on stock (any format)
+• "Stock tracker view watchlist" - Return to watchlist view
+• "Stock tracker pin Apple" - Pin stock to prevent removal
+• "Stock tracker remove Google" - Remove stock from watchlist
+• "Stock tracker alert me if Tesla drops below 175" - Set price alert
 • "Stock tracker help" - Show this help
 • "Stock tracker details AAPL" - Show stock details
+
+Focus View Features:
+• Real-time price and change
+• Day range and 52-week range
+• Volume and trading data
+• Open price and previous close
+• Professional trading information
 
 Settings:
 • timeframe: 1D, 1W, 1M, 1Y
 • refresh_interval_seconds: 30-300
 • max_stocks: 1-10
 
-The dashboard shows persistent stock cards for quick reference.`;
+Say "Stock tracker focus on [stock]" for detailed analysis!`;
 
-    session.layouts.showReferenceCard(
-      'Stock Tracker Help',
+    session.layouts.showTextWall(
       helpText,
       {
         view: ViewType.MAIN,
@@ -1966,9 +2173,8 @@ The dashboard shows persistent stock cards for quick reference.`;
         if (stock) {
           this.showStockDetails(session, stock, timeframe);
         } else {
-          session.layouts.showDoubleTextWall(
-            'Stock Not Found',
-            `${ticker} is not in your watchlist`,
+          session.layouts.showTextWall(
+            `Stock Not Found\n${ticker} is not in your watchlist`,
             {
               view: ViewType.MAIN,
               durationMs: 4000
