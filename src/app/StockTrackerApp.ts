@@ -202,14 +202,13 @@ class VoiceDetectionManager {
   private static processFinalTranscription(session: AppSession, userId: string, data: TranscriptionData): void {
     const transcript = data.text.toLowerCase();
     
-    // Show final transcription feedback
+    // Show final transcription feedback - simplified
     try {
-      session.layouts.showDoubleTextWall(
-        '🎤 Heard:',
-        transcript,
+      session.layouts.showTextWall(
+        `🎤 Heard: ${transcript}`,
         {
           view: ViewType.MAIN,
-          durationMs: 3000
+          durationMs: 2000
         }
       );
     } catch (error) {
@@ -231,18 +230,9 @@ class VoiceDetectionManager {
    * Show interim transcription feedback
    */
   private static showInterimTranscription(session: AppSession, transcript: string): void {
-    try {
-      session.layouts.showDashboardCard(
-        '🎤 Listening:',
-        transcript.length > 30 ? transcript.substring(0, 30) + '...' : transcript,
-        {
-          view: ViewType.DASHBOARD,
-          durationMs: 1000
-        }
-      );
-    } catch (error) {
-      console.error('Error showing interim transcription:', error);
-    }
+    // Don't show interim feedback to avoid layout conflicts
+    // This prevents the error layout from appearing during voice input
+    console.log('Interim transcription received:', transcript);
   }
 
   /**
@@ -250,21 +240,13 @@ class VoiceDetectionManager {
    */
   private static showListeningIndicator(session: AppSession): void {
     try {
-      session.layouts.showTextWall('🎤 Ready to listen...', {
+      session.layouts.showTextWall('🎤 Ready to listen...\nSay "Stock tracker help" for commands', {
         view: ViewType.MAIN,
-        durationMs: 3000
+        durationMs: 5000
       });
+      console.log('Static listening indicator shown');
     } catch (error) {
-      console.error('Error showing listening indicator:', error);
-      // Try a simpler approach
-      try {
-        session.layouts.showTextWall('Ready', {
-          view: ViewType.MAIN,
-          durationMs: 2000
-        });
-      } catch (fallbackError) {
-        console.error('Fallback listening indicator also failed:', fallbackError);
-      }
+      console.error('Error showing static listening indicator:', error);
     }
   }
 
@@ -272,14 +254,9 @@ class VoiceDetectionManager {
    * Hide listening indicator
    */
   private static hideListeningIndicator(session: AppSession): void {
-    try {
-      session.layouts.showTextWall('', {
-        view: ViewType.MAIN,
-        durationMs: 100
-      });
-    } catch (error) {
-      console.error('Error hiding listening indicator:', error);
-    }
+    // Don't show empty text wall - let the stock display remain
+    // This prevents the error layout from appearing
+    console.log('Listening indicator hidden - keeping stock display');
   }
 
   /**
@@ -1022,19 +999,15 @@ class StockTrackerApp extends AppServer {
       VoiceDetectionManager.initializeUser(userId);
     }
 
-    // Show transcription feedback
+    // Show transcription feedback - simplified to avoid layout errors
     try {
       if (data.isFinal) {
-        session.layouts.showDoubleTextWall('🎤 Heard:', transcript, {
+        session.layouts.showTextWall(`🎤 Heard: ${transcript}`, {
           view: ViewType.MAIN,
-          durationMs: 3000
-        });
-      } else {
-        session.layouts.showDashboardCard('🎤 Listening:', transcript, {
-          view: ViewType.DASHBOARD,
-          durationMs: 1000
+          durationMs: 2000
         });
       }
+      // Don't show interim feedback to avoid layout conflicts
     } catch (error) {
       console.error('Error showing transcription feedback:', error);
     }
@@ -1113,32 +1086,25 @@ class StockTrackerApp extends AppServer {
   }
 
   /**
-   * Safe layout display with error handling
+   * Safe layout display with error handling - simplified version
    */
   private safeShowLayout(session: AppSession, layoutType: 'textWall' | 'doubleTextWall' | 'dashboardCard', 
                         title: string, message?: string, options?: any): void {
     try {
-      switch (layoutType) {
-        case 'textWall':
-          session.layouts.showTextWall(title, options);
-          break;
-        case 'doubleTextWall':
-          session.layouts.showDoubleTextWall(title, message || '', options);
-          break;
-        case 'dashboardCard':
-          session.layouts.showDashboardCard(title, message || '', options);
-          break;
-      }
+      // Only use the most reliable layout method
+      session.layouts.showTextWall(title, {
+        view: ViewType.MAIN,
+        durationMs: 5000
+      });
+      console.log('Safe layout display successful');
     } catch (error) {
       console.error('Layout display error:', error);
-      // Try fallback to simple text wall
+      // Try with minimal options
       try {
-        session.layouts.showTextWall(title, {
-          view: ViewType.MAIN,
-          durationMs: 3000
-        });
+        session.layouts.showTextWall(title);
+        console.log('Minimal layout successful');
       } catch (fallbackError) {
-        console.error('Fallback layout also failed:', fallbackError);
+        console.error('All layout methods failed:', fallbackError);
       }
     }
   }
@@ -1209,26 +1175,22 @@ class StockTrackerApp extends AppServer {
    * Shows or hides the listening status indicator
    */
   private showListeningStatus(session: AppSession, isListening: boolean): void {
-    if (isListening) {
-      // Show listening indicator in dashboard
-      session.layouts.showDashboardCard(
-        '🎤',
-        'Listening...',
-        {
-          view: ViewType.DASHBOARD,
-          durationMs: 2000
-        }
-      );
-    } else {
-      // Clear listening indicator
-      session.layouts.showDashboardCard(
-        '',
-        '',
-        {
-          view: ViewType.DASHBOARD,
-          durationMs: 100
-        }
-      );
+    try {
+      if (isListening) {
+        // Show listening indicator using simple text wall
+        session.layouts.showTextWall(
+          '🎤 Ready to listen...\nSay "Stock tracker help" for commands',
+          {
+            view: ViewType.MAIN,
+            durationMs: 3000
+          }
+        );
+      } else {
+        // Don't clear the indicator - let the stock display remain
+        // The stock display will naturally replace the listening indicator
+      }
+    } catch (error) {
+      console.error('Error showing listening status:', error);
     }
   }
 
@@ -1236,20 +1198,27 @@ class StockTrackerApp extends AppServer {
    * Shows feedback for command processing
    */
   private showCommandFeedback(session: AppSession, title: string, message: string): void {
-    // Show processing indicator first
-    this.showProcessingIndicator(session);
-    
-    // Then show the actual feedback
-    setTimeout(() => {
-      session.layouts.showDoubleTextWall(
-        title,
-        message,
-        {
-          view: ViewType.MAIN,
-          durationMs: 4000
+    try {
+      // Show processing indicator first
+      this.showProcessingIndicator(session);
+      
+      // Then show the actual feedback
+      setTimeout(() => {
+        try {
+          session.layouts.showTextWall(
+            `${title}\n${message}`,
+            {
+              view: ViewType.MAIN,
+              durationMs: 4000
+            }
+          );
+        } catch (error) {
+          console.error('Error showing command feedback:', error);
         }
-      );
-    }, 500); // Small delay to show processing indicator
+      }, 500); // Small delay to show processing indicator
+    } catch (error) {
+      console.error('Error showing processing indicator:', error);
+    }
   }
 
   /**
@@ -1266,10 +1235,15 @@ class StockTrackerApp extends AppServer {
    * Shows a listening indicator to let users know the app is ready
    */
   private showListeningIndicator(session: AppSession): void {
-    session.layouts.showTextWall('🎤 Ready to listen...', {
-      view: ViewType.MAIN,
-      durationMs: 3000
-    });
+    try {
+      session.layouts.showTextWall('🎤 Ready to listen...\nSay "Stock tracker help" for commands', {
+        view: ViewType.MAIN,
+        durationMs: 5000
+      });
+      console.log('Listening indicator shown');
+    } catch (error) {
+      console.error('Error showing listening indicator:', error);
+    }
   }
 
   /**
@@ -1731,7 +1705,7 @@ class StockTrackerApp extends AppServer {
   }
 
   /**
-   * Displays the watchlist on the smart glasses with improved layout
+   * Displays the watchlist on the smart glasses with simple, reliable layout
    */
   private displayWatchlist(userId: string, session: AppSession): void {
     const watchlist = userWatchlists.get(userId);
@@ -1745,35 +1719,76 @@ class StockTrackerApp extends AppServer {
 
     // Get current settings
     const timeframe = session.settings.get<'1D' | '1W' | '1M' | '1Y'>('timeframe', '1D');
-    const refreshInterval = session.settings.get<number>('refresh_interval_seconds', 60);
-
-    // Create progress indicator for refresh cycle
-    const now = Date.now();
-    const progress = Math.floor((now % (refreshInterval * 1000)) / (refreshInterval * 1000) * 10);
-    const progressBar = '█'.repeat(progress) + '░'.repeat(10 - progress);
 
     if (watchlist.length === 0) {
-      // Show empty state with instructions
+      // Show empty state with simple text wall
       try {
-        session.layouts.showDoubleTextWall(
-          'Stock Tracker',
-          'No stocks in watchlist.\nSay "Stock tracker add AAPL" to add stocks.',
+        session.layouts.showTextWall(
+          'Stock Tracker\nNo stocks added yet.\nSay "Stock tracker add AAPL"',
+          {
+            view: ViewType.MAIN,
+            durationMs: 5000
+          }
+        );
+        console.log('Successfully displayed empty watchlist');
+      } catch (error) {
+        console.error('Error showing empty watchlist:', error);
+      }
+      return;
+    }
+
+    // For single stock, show detailed info
+    if (watchlist.length === 1) {
+      const stock = watchlist[0];
+      this.displaySingleStock(session, stock, timeframe);
+      return;
+    }
+
+    // For multiple stocks, show summary
+    this.displayMultipleStocks(session, watchlist, timeframe);
+  }
+
+  /**
+   * Displays a single stock with simple layout
+   */
+  private displaySingleStock(session: AppSession, stock: Stock, timeframe: string): void {
+    try {
+      if (stock.price === null || stock.changePercent === null) {
+        session.layouts.showTextWall(
+          `Stock Tracker\n${stock.ticker}\nLoading stock data...`,
+          {
+            view: ViewType.MAIN,
+            durationMs: 3000
+          }
+        );
+      } else {
+        const arrow = stock.changePercent >= 0 ? '▲' : '▼';
+        const changeText = `${arrow}${Math.abs(stock.changePercent).toFixed(1)}%`;
+        const pinIcon = stock.isPinned ? '📌' : '';
+        
+        session.layouts.showTextWall(
+          `Stock Tracker (${timeframe})\n${pinIcon}${stock.ticker}\n$${stock.price.toFixed(2)} ${changeText}`,
           {
             view: ViewType.MAIN,
             durationMs: 8000
           }
         );
-      } catch (error) {
-        console.error('Error showing empty watchlist:', error);
-        this.safeShowLayout(session, 'textWall', 'Stock Tracker - No stocks added yet');
       }
-      return;
+      console.log('Successfully displayed single stock view');
+    } catch (error) {
+      console.error('Error displaying single stock:', error);
+      this.simpleFallback(session, stock);
     }
+  }
 
-    // Show main watchlist summary in main view
-    const topStocks = watchlist.slice(0, 3); // Show top 3 stocks
-    let summaryText = '';
+  /**
+   * Displays multiple stocks with simple layout
+   */
+  private displayMultipleStocks(session: AppSession, watchlist: Stock[], timeframe: string): void {
+    // Create simple summary text
+    let summaryText = `Stock Tracker (${timeframe})\n\n`;
     
+    const topStocks = watchlist.slice(0, 5); // Show top 5 stocks
     topStocks.forEach(stock => {
       const pinIcon = stock.isPinned ? '📌' : '';
       
@@ -1782,70 +1797,46 @@ class StockTrackerApp extends AppServer {
       } else {
         const arrow = stock.changePercent >= 0 ? '▲' : '▼';
         const changeText = `${arrow}${Math.abs(stock.changePercent).toFixed(1)}%`;
-        
         summaryText += `${pinIcon}${stock.ticker} $${stock.price.toFixed(2)} ${changeText}\n`;
       }
     });
 
-    if (watchlist.length > 3) {
-      summaryText += `\n+${watchlist.length - 3} more stocks`;
+    if (watchlist.length > 5) {
+      summaryText += `\n+${watchlist.length - 5} more stocks`;
     }
 
     try {
-      session.layouts.showDoubleTextWall(
-        `Stock Tracker [${progressBar}] (${timeframe})`,
+      session.layouts.showTextWall(
         summaryText,
         {
           view: ViewType.MAIN,
-          durationMs: 12000 // Show longer for main view
+          durationMs: 10000
         }
       );
+      console.log('Successfully displayed multiple stocks summary');
     } catch (error) {
-      console.error('Error showing watchlist summary:', error);
-      // Fallback to simple text wall
-      this.safeShowLayout(session, 'textWall', `Stock Tracker - ${watchlist.length} stocks`);
+      console.error('Error showing multiple stocks summary:', error);
+      this.simpleFallback(session, watchlist[0]);
     }
-
-    // Show individual stock cards in dashboard for persistent reference
-    this.displayDashboardCards(session, watchlist, timeframe);
   }
 
   /**
-   * Displays individual stock cards in the dashboard view
+   * Simple fallback display when other layouts fail
    */
-  private displayDashboardCards(session: AppSession, watchlist: Stock[], timeframe: string): void {
+  private simpleFallback(session: AppSession, stock: Stock): void {
     try {
-      // Clear previous dashboard cards by showing empty state briefly
-      session.layouts.showDashboardCard('', '', { view: ViewType.DASHBOARD, durationMs: 100 });
+      const displayText = stock.price !== null && stock.changePercent !== null
+        ? `Stock Tracker\n${stock.ticker}: $${stock.price.toFixed(2)}`
+        : `Stock Tracker\n${stock.ticker}: Loading...`;
+      
+      session.layouts.showTextWall(displayText, {
+        view: ViewType.MAIN,
+        durationMs: 5000
+      });
+      console.log('Used simple fallback for:', stock.ticker);
     } catch (error) {
-      console.error('Error clearing dashboard cards:', error);
+      console.error('Simple fallback also failed for:', stock.ticker, error);
     }
-
-    // Show each stock as a dashboard card
-    watchlist.forEach((stock, index) => {
-      setTimeout(() => {
-        try {
-          if (stock.price === null || stock.changePercent === null) {
-            session.layouts.showDashboardCard(
-              `${stock.isPinned ? '📌' : ''}${stock.ticker}`,
-              'Loading...',
-              { view: ViewType.DASHBOARD }
-            );
-          } else {
-            const arrow = stock.changePercent >= 0 ? '▲' : '▼';
-            const changeText = `${arrow}${Math.abs(stock.changePercent).toFixed(1)}%`;
-            
-            session.layouts.showDashboardCard(
-              `${stock.isPinned ? '📌' : ''}${stock.ticker}`,
-              `$${stock.price.toFixed(2)} ${changeText}`,
-              { view: ViewType.DASHBOARD }
-            );
-          }
-        } catch (error) {
-          console.error('Error showing dashboard card for stock:', stock.ticker, error);
-        }
-      }, index * 200); // Stagger the display for better UX
-    });
   }
 
   /**
@@ -2058,3 +2049,4 @@ process.on('SIGTERM', () => {
   stockTrackerApp.stop();
   process.exit(0);
 });
+
