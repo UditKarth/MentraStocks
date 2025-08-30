@@ -1301,14 +1301,16 @@ class StockTrackerApp extends AppServer {
 
     try {
       // First, try to use it as a direct ticker (only if it's exactly a valid ticker format)
-      if (companyName.length <= 5 && /^[A-Z]+$/.test(companyName.toUpperCase()) && companyName.length >= 2) {
+      // Remove dashes and spaces for validation (common transcription issue)
+      const cleanCompanyName = companyName.toUpperCase().replace(/[\s-]+/g, '');
+      if (cleanCompanyName.length <= 5 && /^[A-Z]+$/.test(cleanCompanyName) && cleanCompanyName.length >= 2) {
         // Check if this is actually a known ticker symbol
         const tickerDb = TickerDatabase.getInstance();
-        const tickerMatch = tickerDb.searchBySymbol(companyName.toUpperCase());
+        const tickerMatch = tickerDb.searchBySymbol(cleanCompanyName);
         
         if (tickerMatch) {
           // It's a valid ticker symbol
-          const ticker = companyName.toUpperCase();
+          const ticker = cleanCompanyName;
           const stockName = tickerMatch.name;
           
           // Fetch detailed stock data
@@ -1456,13 +1458,17 @@ class StockTrackerApp extends AppServer {
     await new Promise(resolve => setTimeout(resolve, 100));
     
     // Extract stock name/ticker from transcript (improved regex to handle punctuation and common mistranscriptions)
-    const addMatch = transcript.match(/(?:add|at|ad|focus on|focus)\s+([a-zA-Z\s]+?)(?:[.,]|$)/);
+    // Support both "add company" and "add ticker SYMBOL" formats
+    const addMatch = transcript.match(/(?:add|at|ad|focus on|focus)\s+(?:ticker\s+)?([a-zA-Z\s]+?)(?:[.,]|$)/);
     if (addMatch) {
       const companyName = addMatch[1].trim();
+      const isTickerCommand = transcript.toLowerCase().includes('ticker');
+      
       console.log('Extracted company name from voice command:', { 
         originalTranscript: transcript, 
         extractedName: companyName,
-        matchedCommand: addMatch[0]
+        matchedCommand: addMatch[0],
+        isTickerCommand
       });
       
       // Check if stock is already in watchlist
@@ -1477,15 +1483,59 @@ class StockTrackerApp extends AppServer {
         return;
       }
       
+      // Handle ticker command - user explicitly wants to add a ticker symbol
+      if (isTickerCommand) {
+        // Remove dashes and spaces from ticker symbol (common transcription issue)
+        const ticker = companyName.toUpperCase().replace(/[\s-]+/g, '');
+        
+        // Validate ticker format (2-5 uppercase letters)
+        if (ticker.length >= 2 && ticker.length <= 5 && /^[A-Z]+$/.test(ticker)) {
+          console.log('Processing ticker command for:', ticker);
+          
+          // Try to fetch data directly from Yahoo Finance to validate the ticker
+          try {
+            const timeframe = session.settings.get<'1D' | '1W' | '1M' | '1Y'>('timeframe', '1D');
+            const stockData = await stockApiManager.fetchStockData(ticker, timeframe);
+            
+            if (stockData) {
+              // Ticker is valid and has data
+              const added = this.addStock(userId, ticker);
+              if (added) {
+                this.saveWatchlist(userId, session);
+                this.showCommandFeedback(session, '✅ Ticker Added', `${ticker} added to watchlist`);
+                // Force display the watchlist immediately
+                this.forceDisplayWatchlist(userId, session);
+                this.updateWatchlistData(userId, session);
+              }
+              return;
+            } else {
+              // Ticker not found or no data available
+              this.showCommandFeedback(session, '❌ Invalid Ticker', `Ticker ${ticker} not found or no data available`);
+              return;
+            }
+          } catch (error) {
+            console.error('Error validating ticker:', error);
+            this.showCommandFeedback(session, '❌ Ticker Error', `Error validating ticker ${ticker}. Please check the symbol.`);
+            return;
+          }
+        } else {
+          // Invalid ticker format
+          this.showCommandFeedback(session, '❌ Invalid Ticker Format', `Invalid ticker format: ${ticker}. Use 2-5 uppercase letters.`);
+          return;
+        }
+      }
+      
       // First, try to use it as a direct ticker (only if it's exactly a valid ticker format)
-      if (companyName.length <= 5 && /^[A-Z]+$/.test(companyName.toUpperCase()) && companyName.length >= 2) {
+      // Remove dashes and spaces for validation (common transcription issue)
+      const cleanCompanyName = companyName.toUpperCase().replace(/[\s-]+/g, '');
+      if (cleanCompanyName.length <= 5 && /^[A-Z]+$/.test(cleanCompanyName) && cleanCompanyName.length >= 2) {
         // Check if this is actually a known ticker symbol
         const tickerDb = TickerDatabase.getInstance();
-        const tickerMatch = tickerDb.searchBySymbol(companyName.toUpperCase());
+        const tickerMatch = tickerDb.searchBySymbol(cleanCompanyName);
         
         if (tickerMatch) {
           // It's a valid ticker symbol
-          const ticker = companyName.toUpperCase();
+          const ticker = cleanCompanyName;
           const added = this.addStock(userId, ticker);
           if (added) {
             this.saveWatchlist(userId, session);
@@ -1544,9 +1594,10 @@ class StockTrackerApp extends AppServer {
    * Handles pinning a stock
    */
   private handlePinStock(session: AppSession, userId: string, transcript: string): void {
-    const pinMatch = transcript.match(/pin\s+([a-zA-Z]+)/);
+    const pinMatch = transcript.match(/pin\s+([a-zA-Z-]+)/);
     if (pinMatch) {
-      const ticker = pinMatch[1].toUpperCase();
+      // Remove dashes from ticker symbol (common transcription issue)
+      const ticker = pinMatch[1].toUpperCase().replace(/[\s-]+/g, '');
       const watchlist = userWatchlists.get(userId);
       if (watchlist) {
         const stock = watchlist.find(s => s.ticker === ticker);
@@ -1573,9 +1624,10 @@ class StockTrackerApp extends AppServer {
    * Handles removing a stock from the watchlist
    */
   private handleRemoveStock(session: AppSession, userId: string, transcript: string): void {
-    const removeMatch = transcript.match(/remove\s+([a-zA-Z]+)/);
+    const removeMatch = transcript.match(/remove\s+([a-zA-Z-]+)/);
     if (removeMatch) {
-      const ticker = removeMatch[1].toUpperCase();
+      // Remove dashes from ticker symbol (common transcription issue)
+      const ticker = removeMatch[1].toUpperCase().replace(/[\s-]+/g, '');
       const watchlist = userWatchlists.get(userId);
       if (watchlist) {
         const stockIndex = watchlist.findIndex(s => s.ticker === ticker);
@@ -1755,7 +1807,7 @@ class StockTrackerApp extends AppServer {
       const pinIcon = stock.isPinned ? '📌' : '';
       const priceInfo = stock.price ? `$${stock.price.toFixed(2)}` : 'Loading...';
       const changeInfo = stock.changePercent !== null ? 
-        `${stock.changePercent >= 0 ? '▲' : '▼'}${Math.abs(stock.changePercent).toFixed(1)}%` : '';
+        `${stock.changePercent >= 0 ? '▲' : '▼'}${Math.abs(stock.changePercent).toFixed(2)}%` : '';
       
       return `${pinIcon}${stock.ticker}: ${priceInfo} ${changeInfo}`.trim();
     }).join('\n');
@@ -1777,7 +1829,7 @@ class StockTrackerApp extends AppServer {
       const stockData = await this.fetchStockData(ticker.toUpperCase(), timeframe);
       if (stockData) {
         const changeIcon = stockData.changePercent >= 0 ? '▲' : '▼';
-        return `${ticker.toUpperCase()}: $${stockData.price.toFixed(2)} ${changeIcon}${Math.abs(stockData.changePercent).toFixed(1)}% (${timeframe})`;
+        return `${ticker.toUpperCase()}: $${stockData.price.toFixed(2)} ${changeIcon}${Math.abs(stockData.changePercent).toFixed(2)}% (${timeframe})`;
       } else {
         return `Unable to fetch data for ${ticker.toUpperCase()}`;
       }
@@ -1962,7 +2014,7 @@ class StockTrackerApp extends AppServer {
         );
       } else {
         const arrow = stock.changePercent >= 0 ? '▲' : '▼';
-        const changeText = `${arrow}${Math.abs(stock.changePercent).toFixed(1)}%`;
+        const changeText = `${arrow}${Math.abs(stock.changePercent).toFixed(2)}%`;
         const pinIcon = stock.isPinned ? '📌' : '';
         
         session.layouts.showTextWall(
@@ -1995,7 +2047,7 @@ class StockTrackerApp extends AppServer {
         summaryText += `${pinIcon}${stock.ticker} Loading...\n`;
       } else {
         const arrow = stock.changePercent >= 0 ? '▲' : '▼';
-        const changeText = `${arrow}${Math.abs(stock.changePercent).toFixed(1)}%`;
+        const changeText = `${arrow}${Math.abs(stock.changePercent).toFixed(2)}%`;
         summaryText += `${pinIcon}${stock.ticker} $${stock.price.toFixed(2)} ${changeText}\n`;
       }
     });
@@ -2126,6 +2178,7 @@ Voice Commands:
   private showHelp(session: AppSession): void {
     const helpText = `Voice Commands:
 • "Stock tracker add AAPL" - Add stock to watchlist
+• "Stock tracker add ticker CRWD" - Add specific ticker symbol
 • "Stock tracker focus on NVIDIA" - Show detailed stock info
 • "Stock tracker focus Apple" - Focus on stock (any format)
 • "Stock tracker view watchlist" - Return to watchlist view
@@ -2162,9 +2215,10 @@ Say "Stock tracker focus on [stock]" for detailed analysis!`;
    * Handles showing detailed stock information
    */
   private handleShowDetails(session: AppSession, userId: string, transcript: string): void {
-    const detailsMatch = transcript.match(/(?:details|info)\s+([a-zA-Z]+)/);
+    const detailsMatch = transcript.match(/(?:details|info)\s+([a-zA-Z-]+)/);
     if (detailsMatch) {
-      const ticker = detailsMatch[1].toUpperCase();
+      // Remove dashes from ticker symbol (common transcription issue)
+      const ticker = detailsMatch[1].toUpperCase().replace(/[\s-]+/g, '');
       const watchlist = userWatchlists.get(userId);
       const timeframe = session.settings.get<'1D' | '1W' | '1M' | '1Y'>('timeframe', '1D');
       

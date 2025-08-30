@@ -130,11 +130,5 @@ export class CompanyLookup {
     return null;
   }
 
-  /**
-   * Unload the database to free memory
-   */
-  static unloadDatabase(): void {
-    const tickerDb = this.getTickerDb();
-    tickerDb.unload();
-  }
+
 }

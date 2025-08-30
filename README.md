@@ -112,13 +112,18 @@ The app responds to voice commands with the activation phrase "Stock tracker":
 
 ### Adding Stocks
 - "Stock tracker add AAPL"
+- "Stock tracker add ticker CRWD" - Add specific ticker symbol
+- "Stock tracker add ticker A-A-P-L" - Add ticker with dashes (handles transcription)
 - "Stock tracker focus on Tesla"
 - "Stock tracker add NVIDIA"
 
 ### Managing Watchlist
 - "Stock tracker pin Apple" - Pin a stock to prevent removal
+- "Stock tracker pin N-V-D-A" - Pin ticker with dashes (handles transcription)
 - "Stock tracker remove Google" - Remove an unpinned stock
+- "Stock tracker remove T-S-L-A" - Remove ticker with dashes (handles transcription)
 - "Stock tracker details AAPL" - Show detailed stock information
+- "Stock tracker details G-O-O-G-L" - Show details with dashes (handles transcription)
 
 ### Getting Help
 - "Stock tracker help" - Show available commands
@@ -237,3 +242,5 @@ For support and questions:
 ---
 
 **Happy Stock Tracking! 📈**
+
+Run ngrok http --url=https://great-beetle-mint.ngrok-free.app 3000

@@ -300,7 +300,7 @@ class StockTrackerApp extends AppServer {
     }
 
     // Parse commands
-    if (transcript.includes('add') || transcript.includes('focus on')) {
+    if (transcript.includes('add') || transcript.includes('focus on') || transcript.includes('at') || transcript.includes('ad')) {
       this.handleAddStock(session, userId, transcript);
     } else if (transcript.includes('pin')) {
       this.handlePinStock(session, userId, transcript);
@@ -315,10 +315,22 @@ class StockTrackerApp extends AppServer {
    * Handles adding a stock to the watchlist
    */
   private handleAddStock(session: AppSession, userId: string, transcript: string): void {
-    // Extract stock name/ticker from transcript
-    const addMatch = transcript.match(/(?:add|focus on)\s+([a-zA-Z]+)/);
+    // Extract stock name/ticker from transcript (support both company names and ticker command)
+    const addMatch = transcript.match(/(?:add|at|ad|focus on|focus)\s+(?:ticker\s+)?([a-zA-Z\s]+?)(?:[.,]|$)/);
     if (addMatch) {
-      const ticker = addMatch[1].toUpperCase();
+      const companyName = addMatch[1].trim();
+      const isTickerCommand = transcript.toLowerCase().includes('ticker');
+      
+      console.log('Mock: Extracted from voice command:', { 
+        originalTranscript: transcript, 
+        extractedName: companyName,
+        isTickerCommand
+      });
+      
+      // For ticker command, use the extracted name directly as ticker
+      // Remove dashes and spaces from ticker symbol (common transcription issue)
+      const ticker = isTickerCommand ? companyName.toUpperCase().replace(/[\s-]+/g, '') : companyName.toUpperCase();
+      
       this.addStock(userId, ticker);
       this.saveWatchlist(userId, session);
       this.updateWatchlistData(userId, session);
@@ -330,9 +342,10 @@ class StockTrackerApp extends AppServer {
    * Handles pinning a stock
    */
   private handlePinStock(session: AppSession, userId: string, transcript: string): void {
-    const pinMatch = transcript.match(/pin\s+([a-zA-Z]+)/);
+    const pinMatch = transcript.match(/pin\s+([a-zA-Z-]+)/);
     if (pinMatch) {
-      const ticker = pinMatch[1].toUpperCase();
+      // Remove dashes from ticker symbol (common transcription issue)
+      const ticker = pinMatch[1].toUpperCase().replace(/[\s-]+/g, '');
       const watchlist = userWatchlists.get(userId);
       if (watchlist) {
         const stock = watchlist.find(s => s.ticker === ticker);
@@ -350,9 +363,10 @@ class StockTrackerApp extends AppServer {
    * Handles removing a stock from the watchlist
    */
   private handleRemoveStock(session: AppSession, userId: string, transcript: string): void {
-    const removeMatch = transcript.match(/remove\s+([a-zA-Z]+)/);
+    const removeMatch = transcript.match(/remove\s+([a-zA-Z-]+)/);
     if (removeMatch) {
-      const ticker = removeMatch[1].toUpperCase();
+      // Remove dashes from ticker symbol (common transcription issue)
+      const ticker = removeMatch[1].toUpperCase().replace(/[\s-]+/g, '');
       const watchlist = userWatchlists.get(userId);
       if (watchlist) {
         const stockIndex = watchlist.findIndex(s => s.ticker === ticker);
@@ -506,7 +520,7 @@ class StockTrackerApp extends AppServer {
       } else {
         const color = stock.changePercent >= 0 ? 'green' : 'red';
         const arrow = stock.changePercent >= 0 ? '▲' : '▼';
-        const changeText = `${arrow}${Math.abs(stock.changePercent).toFixed(1)}%`;
+        const changeText = `${arrow}${Math.abs(stock.changePercent).toFixed(2)}%`;
         
         summaryText += `${pinIcon}${stock.ticker} $${stock.price.toFixed(2)} <color="${color}">${changeText}</color>\n`;
       }
@@ -548,7 +562,7 @@ class StockTrackerApp extends AppServer {
         } else {
           const color = stock.changePercent >= 0 ? 'green' : 'red';
           const arrow = stock.changePercent >= 0 ? '▲' : '▼';
-          const changeText = `${arrow}${Math.abs(stock.changePercent).toFixed(1)}%`;
+          const changeText = `${arrow}${Math.abs(stock.changePercent).toFixed(2)}%`;
           
           session.layouts.showDashboardCard(
             `${stock.isPinned ? '📌' : ''}${stock.ticker}`,
