@@ -103,6 +103,17 @@ export class StockDataCache {
   }
 
   /**
+   * Get cached percentage change for a ticker
+   */
+  getCachedPercentageChange(ticker: string): number | null {
+    const cached = this.getPriceData(ticker);
+    if (!cached || !cached.previousPrice) {
+      return null;
+    }
+    return this.calculatePercentageChange(ticker, cached.price);
+  }
+
+  /**
    * Check if we have valid cached data for percentage calculation
    */
   hasValidPercentageData(ticker: string): boolean {

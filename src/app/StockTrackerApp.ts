@@ -12,6 +12,7 @@ import express from 'express';
 import { stockApiManager, YahooFinanceProvider } from '../utils/stock-api';
 import { CompanyLookup } from '../utils/company-lookup';
 import { TickerDatabase, TickerSymbols } from '../utils/ticker-database';
+import { StockDataCache } from '../utils/stock-cache';
 
 // Configuration constants
 const PORT = process.env.PORT ? parseInt(process.env.PORT) : 80;
@@ -2202,7 +2203,7 @@ class StockTrackerApp extends AppServer {
   }
 
   /**
-   * Updates watchlist data by fetching current prices
+   * Updates watchlist data by fetching current prices with cache optimization
    */
   private async updateWatchlistData(userId: string, session: AppSession): Promise<void> {
     const watchlist = userWatchlists.get(userId);
@@ -2215,18 +2216,57 @@ class StockTrackerApp extends AppServer {
       // Get current timeframe from settings
       const timeframe = session.settings.get<'1D' | '1W' | '1M' | '1Y'>('timeframe', '1D');
       
-      // Fetch data for all stocks in parallel
-      const dataPromises = watchlist.map(stock => 
-        this.fetchStockData(stock.ticker, timeframe)
-      );
+      // Get cache instance
+      const cache = StockDataCache.getInstance();
+      
+      // Process stocks with cache optimization
+      const dataPromises = watchlist.map(async (stock) => {
+        // Check if we have recent cached data (within 30 seconds)
+        const cachedData = cache.getPriceData(stock.ticker);
+        const now = Date.now();
+        const cacheAge = cachedData ? now - cachedData.timestamp : Infinity;
+        const CACHE_FRESHNESS_THRESHOLD = 30 * 1000; // 30 seconds
+        
+        if (cachedData && cacheAge < CACHE_FRESHNESS_THRESHOLD) {
+          // Use cached data if it's fresh enough
+          console.log(`Using cached data for ${stock.ticker} (age: ${Math.round(cacheAge/1000)}s)`);
+          
+          // Get cached percentage change
+          const cachedPercentage = cache.getCachedPercentageChange(stock.ticker);
+          const changePercent = cachedPercentage !== null ? cachedPercentage : 0.0;
+          
+          return {
+            ticker: stock.ticker,
+            price: cachedData.price,
+            changePercent: changePercent
+          };
+        } else {
+          // Fetch fresh data if cache is stale or missing
+          console.log(`Fetching fresh data for ${stock.ticker}`);
+          const result = await this.fetchStockData(stock.ticker, timeframe);
+          
+          // Store the new data in cache for future use
+          if (result?.price) {
+            cache.storePriceData(stock.ticker, result.price);
+            console.log(`Cached fresh data for ${stock.ticker}`);
+          }
+          
+          return {
+            ticker: stock.ticker,
+            price: result?.price || null,
+            changePercent: result?.changePercent || null
+          };
+        }
+      });
       
       const results = await Promise.all(dataPromises);
       
       // Update stock data
-      results.forEach((result, index) => {
-        if (result && watchlist[index]) {
-          watchlist[index].price = result.price;
-          watchlist[index].changePercent = result.changePercent;
+      results.forEach((result) => {
+        const stockIndex = watchlist.findIndex(stock => stock.ticker === result.ticker);
+        if (stockIndex !== -1 && result.price !== null) {
+          watchlist[stockIndex].price = result.price;
+          watchlist[stockIndex].changePercent = result.changePercent;
         }
       });
 
