@@ -9,7 +9,7 @@ import {
 } from '@mentra/sdk';
 import axios from 'axios';
 import express from 'express';
-import { stockApiManager } from '../utils/stock-api';
+import { stockApiManager, YahooFinanceProvider } from '../utils/stock-api';
 import { CompanyLookup } from '../utils/company-lookup';
 import { TickerDatabase, TickerSymbols } from '../utils/ticker-database';
 
@@ -219,7 +219,7 @@ class VoiceDetectionManager {
     // Check for activation phrase
     if (!transcript.includes('stock tracker')) {
       console.log('Command ignored - no activation phrase');
-      this.showCommandFeedback(session, 'No activation phrase', 'Say "Stock tracker" to activate');
+      this.showCommandFeedbackAndRestore(session, userId, 'No activation phrase', 'Say "Stock tracker" to activate');
       return;
     }
 
@@ -278,6 +278,18 @@ class VoiceDetectionManager {
   }
 
   /**
+   * Show command feedback and restore previous display (static version)
+   */
+  private static showCommandFeedbackAndRestore(session: AppSession, userId: string, title: string, message: string): void {
+    if (this.appInstance) {
+      this.appInstance.showCommandFeedbackAndRestore(session, userId, title, message);
+    } else {
+      // Fallback to regular feedback if app instance not available
+      this.showCommandFeedback(session, title, message);
+    }
+  }
+
+  /**
    * Process voice command
    */
   private static processVoiceCommand(session: AppSession, userId: string, transcript: string): void {
@@ -308,7 +320,7 @@ class VoiceDetectionManager {
       this.handleShowDetails(session, userId, transcript);
     } else {
       console.log('Unknown voice command', { transcript });
-      this.showCommandFeedback(session, 'Command not recognized', 'Try saying "Stock tracker help" for available commands');
+      this.showCommandFeedbackAndRestore(session, userId, 'Command not recognized', 'Try saying "Stock tracker help" for available commands');
     }
   }
 
@@ -319,11 +331,11 @@ class VoiceDetectionManager {
         this.appInstance.handleAddStockCommand(session, userId, transcript);
       } catch (error) {
         console.error('Error in handleAddStock delegation:', error);
-        this.showCommandFeedback(session, 'Error', 'Failed to process add stock command');
+        this.showCommandFeedbackAndRestore(session, userId, 'Error', 'Failed to process add stock command');
       }
     } else {
       console.error('App instance not available for command delegation');
-      this.showCommandFeedback(session, 'Error', 'App not ready for commands');
+      this.showCommandFeedbackAndRestore(session, userId, 'Error', 'App not ready for commands');
     }
   }
 
@@ -333,11 +345,11 @@ class VoiceDetectionManager {
         this.appInstance.handlePinStockCommand(session, userId, transcript);
       } catch (error) {
         console.error('Error in handlePinStock delegation:', error);
-        this.showCommandFeedback(session, 'Error', 'Failed to process pin stock command');
+        this.showCommandFeedbackAndRestore(session, userId, 'Error', 'Failed to process pin stock command');
       }
     } else {
       console.error('App instance not available for command delegation');
-      this.showCommandFeedback(session, 'Error', 'App not ready for commands');
+      this.showCommandFeedbackAndRestore(session, userId, 'Error', 'App not ready for commands');
     }
   }
 
@@ -347,11 +359,11 @@ class VoiceDetectionManager {
         this.appInstance.handleRemoveStockCommand(session, userId, transcript);
       } catch (error) {
         console.error('Error in handleRemoveStock delegation:', error);
-        this.showCommandFeedback(session, 'Error', 'Failed to process remove stock command');
+        this.showCommandFeedbackAndRestore(session, userId, 'Error', 'Failed to process remove stock command');
       }
     } else {
       console.error('App instance not available for command delegation');
-      this.showCommandFeedback(session, 'Error', 'App not ready for commands');
+      this.showCommandFeedbackAndRestore(session, userId, 'Error', 'App not ready for commands');
     }
   }
 
@@ -361,11 +373,11 @@ class VoiceDetectionManager {
         this.appInstance.handlePriceAlertCommand(session, userId, transcript);
       } catch (error) {
         console.error('Error in handlePriceAlert delegation:', error);
-        this.showCommandFeedback(session, 'Error', 'Failed to process price alert command');
+        this.showCommandFeedbackAndRestore(session, userId, 'Error', 'Failed to process price alert command');
       }
     } else {
       console.error('App instance not available for command delegation');
-      this.showCommandFeedback(session, 'Error', 'App not ready for commands');
+      this.showCommandFeedbackAndRestore(session, userId, 'Error', 'App not ready for commands');
     }
   }
 
@@ -389,11 +401,11 @@ class VoiceDetectionManager {
         this.appInstance.handleShowDetailsCommand(session, userId, transcript);
       } catch (error) {
         console.error('Error in handleShowDetails delegation:', error);
-        this.showCommandFeedback(session, 'Error', 'Failed to process details command');
+        this.showCommandFeedbackAndRestore(session, userId, 'Error', 'Failed to process details command');
       }
     } else {
       console.error('App instance not available for command delegation');
-      this.showCommandFeedback(session, 'Error', 'App not ready for commands');
+      this.showCommandFeedbackAndRestore(session, userId, 'Error', 'App not ready for commands');
     }
   }
 
@@ -403,11 +415,11 @@ class VoiceDetectionManager {
         this.appInstance.handleFocusCommand(session, userId, transcript);
       } catch (error) {
         console.error('Error in handleFocusCommand delegation:', error);
-        this.showCommandFeedback(session, 'Error', 'Failed to process focus command');
+        this.showCommandFeedbackAndRestore(session, userId, 'Error', 'Failed to process focus command');
       }
     } else {
       console.error('App instance not available for command delegation');
-      this.showCommandFeedback(session, 'Error', 'App not ready for commands');
+      this.showCommandFeedbackAndRestore(session, userId, 'Error', 'App not ready for commands');
     }
   }
 
@@ -417,11 +429,11 @@ class VoiceDetectionManager {
         this.appInstance.handleViewWatchlistCommand(session, userId);
       } catch (error) {
         console.error('Error in handleViewWatchlistCommand delegation:', error);
-        this.showCommandFeedback(session, 'Error', 'Failed to process view watchlist command');
+        this.showCommandFeedbackAndRestore(session, userId, 'Error', 'Failed to process view watchlist command');
       }
     } else {
       console.error('App instance not available for command delegation');
-      this.showCommandFeedback(session, 'Error', 'App not ready for commands');
+      this.showCommandFeedbackAndRestore(session, userId, 'Error', 'App not ready for commands');
     }
   }
 }
@@ -1243,6 +1255,101 @@ class StockTrackerApp extends AppServer {
   }
 
   /**
+   * Shows command feedback and then restores the previous display state
+   */
+  public showCommandFeedbackAndRestore(session: AppSession, userId: string, title: string, message: string): void {
+    try {
+      // Show processing indicator first
+      this.showProcessingIndicator(session);
+      
+      // Then show the actual feedback
+      setTimeout(() => {
+        try {
+          session.layouts.showTextWall(
+            `${title}\n${message}`,
+            {
+              view: ViewType.MAIN,
+              durationMs: 3000 // Shorter duration for error messages
+            }
+          );
+          
+          // After showing the feedback, restore the previous display state
+          setTimeout(() => {
+            this.restorePreviousDisplay(session, userId);
+          }, 3500); // Wait for feedback to finish, then restore
+          
+        } catch (error) {
+          console.error('Error showing command feedback:', error);
+          // If feedback fails, still try to restore display
+          setTimeout(() => {
+            this.restorePreviousDisplay(session, userId);
+          }, 1000);
+        }
+      }, 500); // Small delay to show processing indicator
+    } catch (error) {
+      console.error('Error showing processing indicator:', error);
+      // If processing indicator fails, still try to restore display
+      setTimeout(() => {
+        this.restorePreviousDisplay(session, userId);
+      }, 1000);
+    }
+  }
+
+  /**
+   * Restores the previous display state based on user's current state
+   */
+  private restorePreviousDisplay(session: AppSession, userId: string): void {
+    try {
+      const focusState = userFocusState.get(userId);
+      
+      if (focusState && focusState.isFocused && focusState.ticker) {
+        // User was in focus mode, restore focused stock view
+        console.log('Restoring focused stock view for:', focusState.ticker);
+        this.restoreFocusedStockView(session, userId, focusState.ticker);
+      } else {
+        // User was in watchlist mode, restore watchlist view
+        console.log('Restoring watchlist view');
+        this.displayWatchlist(userId, session);
+      }
+    } catch (error) {
+      console.error('Error restoring previous display:', error);
+      // Fallback to watchlist view
+      try {
+        this.displayWatchlist(userId, session);
+      } catch (fallbackError) {
+        console.error('Error in fallback display:', fallbackError);
+      }
+    }
+  }
+
+  /**
+   * Restores the focused stock view for a specific ticker
+   */
+  private async restoreFocusedStockView(session: AppSession, userId: string, ticker: string): Promise<void> {
+    try {
+      const timeframe = session.settings.get<'1D' | '1W' | '1M' | '1Y'>('timeframe', '1D');
+      const detailedData = await this.fetchDetailedStockData(ticker, session);
+      
+      if (detailedData) {
+        // Get stock name from database or use ticker
+        const tickerDb = TickerDatabase.getInstance();
+        const tickerMatch = tickerDb.searchBySymbol(ticker);
+        const stockName = tickerMatch ? tickerMatch.name : ticker;
+        
+        this.showDetailedStockView(session, ticker, stockName, detailedData, userId);
+      } else {
+        // If we can't fetch data, fall back to watchlist
+        console.log('Could not restore focused view, falling back to watchlist');
+        this.displayWatchlist(userId, session);
+      }
+    } catch (error) {
+      console.error('Error restoring focused stock view:', error);
+      // Fall back to watchlist
+      this.displayWatchlist(userId, session);
+    }
+  }
+
+  /**
    * Shows a processing indicator
    */
   private showProcessingIndicator(session: AppSession): void {
@@ -1292,7 +1399,7 @@ class StockTrackerApp extends AppServer {
     // Extract stock name/ticker from transcript
     const focusMatch = transcript.match(/(?:focus on|focus)\s+([a-zA-Z\s]+?)(?:[.,]|$)/);
     if (!focusMatch) {
-      this.showCommandFeedback(session, '❌ Invalid Focus Command', 'Please specify a stock to focus on. Try: "Stock tracker focus on AAPL"');
+      this.showCommandFeedbackAndRestore(session, userId, '❌ Invalid Focus Command', 'Please specify a stock to focus on. Try: "Stock tracker focus on AAPL"');
       return;
     }
 
@@ -1316,7 +1423,7 @@ class StockTrackerApp extends AppServer {
           // Fetch detailed stock data
           const detailedData = await this.fetchDetailedStockData(ticker, session);
           if (!detailedData) {
-            this.showCommandFeedback(session, '❌ Data Unavailable', `Could not fetch data for ${ticker}. Please try again.`);
+            this.showCommandFeedbackAndRestore(session, userId, '❌ Data Unavailable', `Could not fetch data for ${ticker}. Please try again.`);
             return;
           }
 
@@ -1324,7 +1431,7 @@ class StockTrackerApp extends AppServer {
           userFocusState.set(userId, { ticker, isFocused: true });
 
           // Show detailed stock view
-          this.showDetailedStockView(session, ticker, stockName, detailedData);
+          this.showDetailedStockView(session, ticker, stockName, detailedData, userId);
           return;
         }
         // If not a valid ticker, continue to company name lookup
@@ -1343,7 +1450,7 @@ class StockTrackerApp extends AppServer {
         // Fetch detailed stock data
         const detailedData = await this.fetchDetailedStockData(ticker, session);
         if (!detailedData) {
-          this.showCommandFeedback(session, '❌ Data Unavailable', `Could not fetch data for ${ticker}. Please try again.`);
+          this.showCommandFeedbackAndRestore(session, userId, '❌ Data Unavailable', `Could not fetch data for ${ticker}. Please try again.`);
           return;
         }
 
@@ -1351,16 +1458,16 @@ class StockTrackerApp extends AppServer {
         userFocusState.set(userId, { ticker, isFocused: true });
 
         // Show detailed stock view
-        this.showDetailedStockView(session, ticker, stockName, detailedData);
+        this.showDetailedStockView(session, ticker, stockName, detailedData, userId);
       } else {
         // Show error if no matches found
-        this.showCommandFeedback(session, '❌ Company Not Found', `Could not find "${companyName}". Try using the ticker symbol.`);
+        this.showCommandFeedbackAndRestore(session, userId, '❌ Company Not Found', `Could not find "${companyName}". Try using the ticker symbol.`);
         console.log('Company lookup failed', { companyName, error: lookupResult.error });
       }
 
     } catch (error) {
       console.error('Error in focus command:', error);
-      this.showCommandFeedback(session, '❌ Focus Error', `Error focusing on ${companyName}. Please try again.`);
+      this.showCommandFeedbackAndRestore(session, userId, '❌ Focus Error', `Error focusing on ${companyName}. Please try again.`);
     }
   }
 
@@ -1393,7 +1500,7 @@ class StockTrackerApp extends AppServer {
   /**
    * Shows detailed stock information in focus view
    */
-  private showDetailedStockView(session: AppSession, ticker: string, stockName: string, data: any): void {
+  private showDetailedStockView(session: AppSession, ticker: string, stockName: string, data: any, userId?: string): void {
     try {
       const arrow = data.changePercent >= 0 ? '▲' : '▼';
       const changeText = `${arrow}${Math.abs(data.changePercent).toFixed(2)}%`;
@@ -1429,7 +1536,11 @@ class StockTrackerApp extends AppServer {
       console.log('Detailed stock view shown for:', ticker);
     } catch (error) {
       console.error('Error showing detailed stock view:', error);
-      this.showCommandFeedback(session, '❌ Display Error', 'Error showing detailed stock information');
+      if (userId) {
+        this.showCommandFeedbackAndRestore(session, userId, '❌ Display Error', 'Error showing detailed stock information');
+      } else {
+        this.showCommandFeedback(session, '❌ Display Error', 'Error showing detailed stock information');
+      }
     }
   }
 
@@ -1479,7 +1590,7 @@ class StockTrackerApp extends AppServer {
       );
       
       if (existingStock) {
-        this.showCommandFeedback(session, 'ℹ️ Already Added', `${existingStock.ticker} is already in your watchlist`);
+        this.showCommandFeedbackAndRestore(session, userId, 'ℹ️ Already Added', `${existingStock.ticker} is already in your watchlist`);
         return;
       }
       
@@ -1495,7 +1606,10 @@ class StockTrackerApp extends AppServer {
           // Try to fetch data directly from Yahoo Finance to validate the ticker
           try {
             const timeframe = session.settings.get<'1D' | '1W' | '1M' | '1Y'>('timeframe', '1D');
-            const stockData = await stockApiManager.fetchStockData(ticker, timeframe);
+            
+            // Use Yahoo Finance directly for validation (no mock fallback)
+            const yahooProvider = new YahooFinanceProvider();
+            const stockData = await yahooProvider.fetchStockData(ticker, timeframe);
             
             if (stockData) {
               // Ticker is valid and has data
@@ -1510,17 +1624,17 @@ class StockTrackerApp extends AppServer {
               return;
             } else {
               // Ticker not found or no data available
-              this.showCommandFeedback(session, '❌ Invalid Ticker', `Ticker ${ticker} not found or no data available`);
+              this.showCommandFeedbackAndRestore(session, userId, '❌ Invalid Ticker', `Ticker ${ticker} not found or no data available`);
               return;
             }
           } catch (error) {
             console.error('Error validating ticker:', error);
-            this.showCommandFeedback(session, '❌ Ticker Error', `Error validating ticker ${ticker}. Please check the symbol.`);
+            this.showCommandFeedbackAndRestore(session, userId, '❌ Ticker Error', `Error validating ticker ${ticker}. Please check the symbol.`);
             return;
           }
         } else {
           // Invalid ticker format
-          this.showCommandFeedback(session, '❌ Invalid Ticker Format', `Invalid ticker format: ${ticker}. Use 2-5 uppercase letters.`);
+          this.showCommandFeedbackAndRestore(session, userId, '❌ Invalid Ticker Format', `Invalid ticker format: ${ticker}. Use 2-5 uppercase letters.`);
           return;
         }
       }
@@ -1562,7 +1676,7 @@ class StockTrackerApp extends AppServer {
           // Check if the looked-up ticker is already in watchlist
           const existingLookupStock = watchlist.find(stock => stock.ticker === ticker);
           if (existingLookupStock) {
-            this.showCommandFeedback(session, 'ℹ️ Already Added', `${ticker} (${companyName}) is already in your watchlist`);
+            this.showCommandFeedbackAndRestore(session, userId, 'ℹ️ Already Added', `${ticker} (${companyName}) is already in your watchlist`);
             return;
           }
           
@@ -1577,16 +1691,16 @@ class StockTrackerApp extends AppServer {
           }
         } else {
           // Show error if no matches found
-          this.showCommandFeedback(session, '❌ Company Not Found', `Could not find "${companyName}". Try using the ticker symbol.`);
+          this.showCommandFeedbackAndRestore(session, userId, '❌ Company Not Found', `Could not find "${companyName}". Try using the ticker symbol.`);
           console.log('Company lookup failed', { companyName, error: lookupResult.error });
         }
       } catch (error) {
         // Show error if lookup fails
-        this.showCommandFeedback(session, '❌ Lookup Error', `Error looking up "${companyName}". Try using the ticker symbol.`);
+        this.showCommandFeedbackAndRestore(session, userId, '❌ Lookup Error', `Error looking up "${companyName}". Try using the ticker symbol.`);
         console.error('Company lookup error', { companyName, error });
       }
     } else {
-      this.showCommandFeedback(session, '❌ Invalid Command', 'Please specify a stock to add. Try: "Stock tracker add AAPL"');
+      this.showCommandFeedbackAndRestore(session, userId, '❌ Invalid Command', 'Please specify a stock to add. Try: "Stock tracker add AAPL"');
     }
   }
 
@@ -1612,11 +1726,11 @@ class StockTrackerApp extends AppServer {
         } else {
           // Show error if stock not found
           console.log('Attempted to pin non-existent stock', { ticker, userId });
-          this.showCommandFeedback(session, '❌ Stock Not Found', `${ticker} is not in your watchlist`);
+          this.showCommandFeedbackAndRestore(session, userId, '❌ Stock Not Found', `${ticker} is not in your watchlist`);
         }
       }
     } else {
-      this.showCommandFeedback(session, '❌ Invalid Command', 'Please specify a stock to pin. Try: "Stock tracker pin AAPL"');
+      this.showCommandFeedbackAndRestore(session, userId, '❌ Invalid Command', 'Please specify a stock to pin. Try: "Stock tracker pin AAPL"');
     }
   }
 
@@ -1642,15 +1756,15 @@ class StockTrackerApp extends AppServer {
         } else if (stockIndex !== -1 && watchlist[stockIndex].isPinned) {
           // Show error if stock is pinned
           console.log('Attempted to remove pinned stock', { ticker, userId });
-          this.showCommandFeedback(session, '❌ Cannot Remove', `${ticker} is pinned. Unpin first.`);
+          this.showCommandFeedbackAndRestore(session, userId, '❌ Cannot Remove', `${ticker} is pinned. Unpin first.`);
         } else {
           // Show error if stock not found
           console.log('Attempted to remove non-existent stock', { ticker, userId });
-          this.showCommandFeedback(session, '❌ Stock Not Found', `${ticker} is not in your watchlist`);
+          this.showCommandFeedbackAndRestore(session, userId, '❌ Stock Not Found', `${ticker} is not in your watchlist`);
         }
       }
     } else {
-      this.showCommandFeedback(session, '❌ Invalid Command', 'Please specify a stock to remove. Try: "Stock tracker remove AAPL"');
+      this.showCommandFeedbackAndRestore(session, userId, '❌ Invalid Command', 'Please specify a stock to remove. Try: "Stock tracker remove AAPL"');
     }
   }
 

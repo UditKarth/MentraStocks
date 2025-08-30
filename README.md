@@ -10,6 +10,7 @@ A real-time stock tracking application for smart glasses using the @mentra/sdk. 
 - **Dashboard Interface**: Persistent stock cards for quick reference
 - **Real-time API**: Yahoo Finance (no API key required)
 - **Mock Mode**: Test with simulated data for development
+- **Smart Display Restoration**: Automatically returns to previous view after all errors
 
 ## 📦 Installation
 
@@ -116,6 +117,8 @@ The app responds to voice commands with the activation phrase "Stock tracker":
 - "Stock tracker add ticker A-A-P-L" - Add ticker with dashes (handles transcription)
 - "Stock tracker focus on Tesla"
 - "Stock tracker add NVIDIA"
+
+**Note**: Invalid tickers will show an error message and won't be added to the watchlist. The app automatically restores your previous view after showing any error message.
 
 ### Managing Watchlist
 - "Stock tracker pin Apple" - Pin a stock to prevent removal

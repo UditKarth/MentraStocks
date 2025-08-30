@@ -26,7 +26,7 @@ export interface StockApiResponse {
 /**
  * Yahoo Finance API Provider (No API key required)
  */
-class YahooFinanceProvider {
+export class YahooFinanceProvider {
   name = 'Yahoo Finance';
 
   async fetchStockData(ticker: string, timeframe: string): Promise<StockApiResponse | null> {
