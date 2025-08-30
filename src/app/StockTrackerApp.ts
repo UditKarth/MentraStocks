@@ -1498,7 +1498,7 @@ class StockTrackerApp extends AppServer {
   }
 
   /**
-   * Shows detailed stock information in focus view
+   * Shows detailed stock information in focus view with comprehensive investment metrics
    */
   private showDetailedStockView(session: AppSession, ticker: string, stockName: string, data: any, userId?: string): void {
     try {
@@ -1509,6 +1509,7 @@ class StockTrackerApp extends AppServer {
       let detailedText = `${stockName} (${ticker})\n`;
       detailedText += `${changeColor} $${data.price.toFixed(2)} ${changeText}\n\n`;
       
+      // Basic trading info
       if (data.openPrice) {
         detailedText += `Open: $${data.openPrice.toFixed(2)}\n`;
       }
@@ -1526,14 +1527,76 @@ class StockTrackerApp extends AppServer {
         detailedText += `Volume: ${volumeFormatted}\n`;
       }
 
+      detailedText += `\n📊 INVESTMENT METRICS:\n`;
+
+      // 1. Market Cap (Company size)
+      if (data.marketCap) {
+        const marketCapFormatted = this.formatMarketCap(data.marketCap);
+        detailedText += `Market Cap: ${marketCapFormatted}\n`;
+      }
+
+      // 2. P/E Ratio (Valuation)
+      if (data.peRatio) {
+        const peColor = data.peRatio < 15 ? '🟢' : data.peRatio < 25 ? '🟡' : '🔴';
+        detailedText += `P/E Ratio: ${peColor} ${data.peRatio.toFixed(2)}\n`;
+      }
+
+      // 3. Beta (Volatility/Risk)
+      if (data.beta) {
+        const betaColor = data.beta < 1 ? '🟢' : data.beta < 1.5 ? '🟡' : '🔴';
+        detailedText += `Beta: ${betaColor} ${data.beta.toFixed(2)}\n`;
+      }
+
+      // 4. EPS (Earnings per share)
+      if (data.eps) {
+        const epsColor = data.eps > 0 ? '🟢' : '🔴';
+        detailedText += `EPS: ${epsColor} $${data.eps.toFixed(2)}\n`;
+      }
+
+      // 5. Return on Equity (Profitability efficiency)
+      if (data.returnOnEquity) {
+        const roeColor = data.returnOnEquity > 15 ? '🟢' : data.returnOnEquity > 10 ? '🟡' : '🔴';
+        detailedText += `ROE: ${roeColor} ${(data.returnOnEquity * 100).toFixed(1)}%\n`;
+      }
+
+      // 6. Debt-to-Equity (Financial health)
+      if (data.debtToEquity) {
+        const debtColor = data.debtToEquity < 0.5 ? '🟢' : data.debtToEquity < 1 ? '🟡' : '🔴';
+        detailedText += `Debt/Equity: ${debtColor} ${data.debtToEquity.toFixed(2)}\n`;
+      }
+
+      // 7. Profit Margin (Profitability)
+      if (data.profitMargin) {
+        const marginColor = data.profitMargin > 0.15 ? '🟢' : data.profitMargin > 0.10 ? '🟡' : '🔴';
+        detailedText += `Profit Margin: ${marginColor} ${(data.profitMargin * 100).toFixed(1)}%\n`;
+      }
+
+      // 8. Revenue Growth (Growth potential)
+      if (data.revenueGrowth) {
+        const growthColor = data.revenueGrowth > 10 ? '🟢' : data.revenueGrowth > 5 ? '🟡' : '🔴';
+        detailedText += `Revenue Growth: ${growthColor} ${data.revenueGrowth.toFixed(1)}%\n`;
+      }
+
+      // 9. Dividend Yield (Income potential)
+      if (data.dividendYield) {
+        const yieldColor = data.dividendYield > 3 ? '🟢' : data.dividendYield > 1 ? '🟡' : '🔴';
+        detailedText += `Dividend Yield: ${yieldColor} ${(data.dividendYield * 100).toFixed(2)}%\n`;
+      }
+
+      // 10. Price-to-Book (Valuation)
+      if (data.priceToBook) {
+        const pbColor = data.priceToBook < 1.5 ? '🟢' : data.priceToBook < 3 ? '🟡' : '🔴';
+        detailedText += `P/B Ratio: ${pbColor} ${data.priceToBook.toFixed(2)}\n`;
+      }
+
       detailedText += `\nSay "Stock tracker view watchlist" to return`;
 
       session.layouts.showTextWall(detailedText, {
         view: ViewType.MAIN,
-        durationMs: 15000 // Show longer for detailed view
+        durationMs: 20000 // Show longer for detailed view with more metrics
       });
 
-      console.log('Detailed stock view shown for:', ticker);
+      console.log('Enhanced detailed stock view shown for:', ticker);
     } catch (error) {
       console.error('Error showing detailed stock view:', error);
       if (userId) {
@@ -1556,6 +1619,20 @@ class StockTrackerApp extends AppServer {
       return `${(volume / 1000).toFixed(1)}K`;
     }
     return volume.toString();
+  }
+
+  /**
+   * Formats market cap numbers for display
+   */
+  private formatMarketCap(marketCap: number): string {
+    if (marketCap >= 1000000000000) {
+      return `$${(marketCap / 1000000000000).toFixed(1)}T`;
+    } else if (marketCap >= 1000000000) {
+      return `$${(marketCap / 1000000000).toFixed(1)}B`;
+    } else if (marketCap >= 1000000) {
+      return `$${(marketCap / 1000000).toFixed(1)}M`;
+    }
+    return `$${marketCap.toLocaleString()}`;
   }
 
   /**
