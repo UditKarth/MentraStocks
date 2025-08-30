@@ -8,11 +8,44 @@ export interface Stock {
   price: number | null;
   changePercent: number | null;
   isPinned: boolean;
+  // Additional properties for enhanced display
+  volume?: number;
+  marketCap?: number;
+  peRatio?: number;
+  beta?: number;
+  dividendYield?: number;
+  eps?: number;
+  priceToBook?: number;
+  debtToEquity?: number;
+  returnOnEquity?: number;
+  profitMargin?: number;
+  revenueGrowth?: number;
+  earningsGrowth?: number;
+  freeCashFlow?: number;
+  enterpriseValue?: number;
 }
 
 export interface StockApiResponse {
   price: number;
   changePercent: number;
+  volume?: number;
+  marketCap?: number;
+  peRatio?: number;
+  dividendYield?: number;
+  dayRange?: { low: number; high: number; };
+  yearRange?: { low: number; high: number; };
+  openPrice?: number;
+  previousClose?: number;
+  beta?: number;
+  eps?: number;
+  priceToBook?: number;
+  debtToEquity?: number;
+  returnOnEquity?: number;
+  profitMargin?: number;
+  revenueGrowth?: number;
+  earningsGrowth?: number;
+  freeCashFlow?: number;
+  enterpriseValue?: number;
 }
 
 // Timeframe options

@@ -13,6 +13,13 @@ import { stockApiManager, YahooFinanceProvider } from '../utils/stock-api';
 import { CompanyLookup } from '../utils/company-lookup';
 import { TickerDatabase, TickerSymbols } from '../utils/ticker-database';
 import { StockDataCache } from '../utils/stock-cache';
+import { LazyTickerDatabase } from '../utils/lazy-ticker-database';
+import { SessionManager } from '../utils/session-manager';
+import { PowerManager } from '../utils/power-manager';
+import { AdaptiveDisplay } from '../utils/adaptive-display';
+import { BatchApiManager } from '../utils/batch-api-manager';
+import { IntelligentCache } from '../utils/intelligent-cache';
+import { SmartVoiceProcessor } from '../utils/smart-voice-processor';
 
 // Configuration constants
 const PORT = process.env.PORT ? parseInt(process.env.PORT) : 80;
@@ -825,87 +832,205 @@ class StockTrackerApp extends AppServer {
     });
 
     try {
+      // Initialize optimized session manager
+      const sessionManager = SessionManager.getInstance();
+      const userSession = sessionManager.createSession(userId, []);
+      
+      // Initialize enhanced power manager with MentraOS integration
+      const powerManager = PowerManager.getInstance();
+      powerManager.initializeWithSession(session);
+      
+      // Initialize adaptive display system
+      const adaptiveDisplay = AdaptiveDisplay.getInstance();
+      
+      // Initialize Phase 2 optimizations
+      const batchApiManager = BatchApiManager.getInstance();
+      const intelligentCache = IntelligentCache.getInstance();
+      const smartVoiceProcessor = SmartVoiceProcessor.getInstance();
+      
+      // Check device capabilities and adapt behavior
+      if (session.capabilities) {
+        console.log('Device capabilities detected', {
+          hasMicrophone: !!session.capabilities.microphone,
+          hasDisplay: !!session.capabilities.display,
+          hasButton: !!session.capabilities.button,
+          hasPower: !!session.capabilities.power
+        });
+        
+        // Configure adaptive display based on device capabilities
+        if (session.capabilities.display) {
+          adaptiveDisplay.setDeviceCapabilities({
+            screenSize: 'small', // Smart glasses default
+            hasColor: true,
+            hasHighContrast: true,
+            maxLines: 4,
+            maxCharsPerLine: 20
+          });
+        }
+      }
+      
       // Check if we should limit new sessions
-      if (MemoryManager.shouldLimitSessions()) {
+      if (sessionManager.getStats().totalSessions >= 50) {
         console.log('Session limit reached, cleaning up oldest sessions');
-        MemoryManager.performMemoryCleanup();
+        // Session manager handles cleanup automatically
       }
 
       // Initialize cleanup functions array for this user
       const cleanupFunctions: Array<() => void> = [];
-      userCleanupFunctions.set(userId, cleanupFunctions);
+      sessionManager.addCleanupFunction(userId, () => {
+        cleanupFunctions.forEach(cleanup => cleanup());
+      });
 
       // Initialize voice detection for this user
       VoiceDetectionManager.initializeUser(userId);
       
       // Update user activity
-      MemoryManager.updateUserActivity(userId);
+      sessionManager.updateActivity(userId);
 
       // Load data from settings with proper defaults
       const watchlist = session.settings.get<Stock[]>('watchlist', []);
       const timeframe = session.settings.get<'1D' | '1W' | '1M' | '1Y'>('timeframe', '1D');
-      const refreshInterval = session.settings.get<number>('refresh_interval_seconds', 60);
+      const defaultRefreshInterval = session.settings.get<number>('refresh_interval_seconds', 60);
       const maxStocks = session.settings.get<number>('max_stocks', 5);
 
-      // Initialize state
-      userWatchlists.set(userId, watchlist);
+      // Update session with watchlist data
+      sessionManager.updateWatchlist(userId, watchlist);
 
-              console.log('Session initialized', {
-          watchlistCount: watchlist.length,
-          timeframe,
-          refreshInterval,
-          maxStocks
+      console.log('Session initialized', {
+        watchlistCount: watchlist.length,
+        timeframe,
+        defaultRefreshInterval,
+        maxStocks
+      });
+
+      // Start data refresh loop with power-aware scheduling
+      const startRefreshLoop = () => {
+        const optimalInterval = powerManager.getOptimalInterval();
+        console.log(`Starting refresh loop with ${optimalInterval}ms interval (power-aware)`);
+        
+        const interval = setInterval(() => {
+          this.updateWatchlistData(userId, session);
+        }, optimalInterval);
+        
+        sessionManager.setRefreshInterval(userId, interval);
+        
+        // Set up power-aware interval updates
+        const powerListener = powerManager.addListener((powerState) => {
+          console.log(`Power state changed, updating refresh interval for user: ${userId}`);
+          const newInterval = powerManager.getOptimalInterval();
+          
+          // Restart refresh loop with new interval
+          const currentInterval = sessionManager.getSession(userId)?.refreshInterval;
+          if (currentInterval) {
+            clearInterval(currentInterval);
+          }
+          
+          const newRefreshInterval = setInterval(() => {
+            this.updateWatchlistData(userId, session);
+          }, newInterval);
+          
+          sessionManager.setRefreshInterval(userId, newRefreshInterval);
         });
-
-      // Check device capabilities and adapt behavior
-      if (session.capabilities) {
-                console.log('Device capabilities detected', {
-          hasMicrophone: !!session.capabilities.microphone,
-          hasDisplay: !!session.capabilities.display,
-          hasButton: !!session.capabilities.button
+        
+        cleanupFunctions.push(() => {
+          powerListener(); // Unsubscribe from power events
         });
-      }
-
-      // Start data refresh loop
-      const interval = setInterval(() => {
-        this.updateWatchlistData(userId, session);
-      }, refreshInterval * 1000);
-      userRefreshIntervals.set(userId, interval);
+      };
+      
+      startRefreshLoop();
 
       // Initial display
       await this.updateWatchlistData(userId, session);
 
-      // Set up voice command listener using proper event subscription
+      // Set up voice command listener using smart voice processor
       const transcriptionCleanup = session.events.onTranscription((data) => {
         console.log('Received transcription', { 
           text: data.text, 
           isFinal: data.isFinal
         });
         
-        // Use main voice detection manager
-        if (!VoiceDetectionManager.isAppInstanceSet()) {
-          console.log('Setting app instance for voice detection');
-          VoiceDetectionManager.setAppInstance(this);
+        // Process through smart voice processor for deduplication
+        const wasProcessed = smartVoiceProcessor.processTranscription(data.text, data.isFinal);
+        
+        if (wasProcessed) {
+          // Use main voice detection manager
+          if (!VoiceDetectionManager.isAppInstanceSet()) {
+            console.log('Setting app instance for voice detection');
+            VoiceDetectionManager.setAppInstance(this);
+          }
+          VoiceDetectionManager.handleTranscription(session, userId, data);
+        } else {
+          console.log('Transcription filtered out by smart voice processor');
         }
-        VoiceDetectionManager.handleTranscription(session, userId, data);
       });
       cleanupFunctions.push(transcriptionCleanup);
 
       // Show initial app status
       this.showInitialLayout(session);
       
-      // Start voice detection
-      VoiceDetectionManager.startListening(session, userId);
+      // Initialize smart voice processor with callbacks
+      smartVoiceProcessor.setCallbacks({
+        onVoiceStart: () => {
+          console.log('Voice activity started for user:', userId);
+        },
+        onVoiceEnd: () => {
+          console.log('Voice activity ended for user:', userId);
+        },
+        onTranscription: (text: string, isFinal: boolean) => {
+          console.log('Smart transcription received:', { text: text.substring(0, 50), isFinal, userId });
+          const transcriptionData: TranscriptionData = {
+            text,
+            isFinal,
+            type: StreamType.TRANSCRIPTION,
+            startTime: Date.now(),
+            endTime: Date.now()
+          };
+          VoiceDetectionManager.handleTranscription(session, userId, transcriptionData);
+        },
+        onSilence: () => {
+          console.log('Silence detected for user:', userId);
+        }
+      });
       
-      // Show voice detection status
-      console.log('Voice detection initialized for user:', userId);
-      
-      // Set up periodic voice detection restart to prevent getting stuck
-      const voiceRestartInterval = setInterval(() => {
-        const state = voiceDetectionState.get(userId);
-        if (state && !state.isListening) {
-          console.log('Restarting voice detection for user:', userId);
+      // Start voice detection with power-aware settings
+      const startVoiceDetection = () => {
+        if (powerManager.shouldEnableVoice()) {
+          smartVoiceProcessor.startListening();
           VoiceDetectionManager.startListening(session, userId);
+          console.log('Smart voice detection started for user:', userId, '(power-aware)');
+        } else {
+          console.log('Voice detection disabled for user:', userId, '(low power mode)');
+        }
+      };
+      
+      startVoiceDetection();
+      
+      // Set up power-aware voice detection management
+      const voicePowerListener = powerManager.addListener((powerState) => {
+        console.log(`Power state changed, updating voice detection for user: ${userId}`);
+        
+        if (powerManager.shouldEnableVoice()) {
+          smartVoiceProcessor.startListening();
+          VoiceDetectionManager.startListening(session, userId);
+        } else {
+          smartVoiceProcessor.stopListening();
+          VoiceDetectionManager.stopListening(session, userId, 'power_management');
+        }
+      });
+      
+      cleanupFunctions.push(() => {
+        voicePowerListener(); // Unsubscribe from power events
+        smartVoiceProcessor.stopListening(); // Stop smart voice processor
+      });
+      
+      // Set up periodic voice detection restart to prevent getting stuck (only when voice is enabled)
+      const voiceRestartInterval = setInterval(() => {
+        if (powerManager.shouldEnableVoice()) {
+          const state = voiceDetectionState.get(userId);
+          if (state && !state.isListening) {
+            console.log('Restarting voice detection for user:', userId);
+            VoiceDetectionManager.startListening(session, userId);
+          }
         }
       }, 30000); // Check every 30 seconds
       
@@ -1231,16 +1356,19 @@ class StockTrackerApp extends AppServer {
       if (isListening) {
         // Check if user is currently viewing stock data
         if (userId) {
-          const displayState = userDisplayState.get(userId);
+          const sessionManager = SessionManager.getInstance();
+          const displayState = sessionManager.getDisplayState(userId);
           if (displayState && displayState.isShowingStockData) {
             console.log('Skipping listening status - user is viewing stock data');
             return; // Don't override stock data display
           }
         }
 
-        // Show listening indicator using simple text wall
+        // Show listening indicator using adaptive display
+        const adaptiveDisplay = AdaptiveDisplay.getInstance();
+        const content = adaptiveDisplay.createListeningStatusContent();
         session.layouts.showTextWall(
-          '🎤 Ready to listen...\nSay "Stock tracker help" for commands',
+          content,
           {
             view: ViewType.MAIN,
             durationMs: 3000
@@ -1261,11 +1389,14 @@ class StockTrackerApp extends AppServer {
    */
   private triggerListeningStatus(session: AppSession, userId: string): void {
     try {
-      const displayState = userDisplayState.get(userId);
+      const sessionManager = SessionManager.getInstance();
+      const displayState = sessionManager.getDisplayState(userId);
       if (!displayState || !displayState.isShowingStockData) {
         // User is not viewing stock data, show listening status
+        const adaptiveDisplay = AdaptiveDisplay.getInstance();
+        const content = adaptiveDisplay.createListeningStatusContent();
         session.layouts.showTextWall(
-          '🎤 Ready to listen...\nSay "Stock tracker help" for commands',
+          content,
           {
             view: ViewType.MAIN,
             durationMs: 3000
@@ -1286,11 +1417,12 @@ class StockTrackerApp extends AppServer {
    */
   public clearStockDisplayAndTriggerListening(session: AppSession, userId: string): void {
     try {
-      const displayState = userDisplayState.get(userId);
+      const sessionManager = SessionManager.getInstance();
+      const displayState = sessionManager.getDisplayState(userId);
       const wasShowingStockData = displayState?.isShowingStockData || false;
       
       // Clear the stock display state
-      userDisplayState.set(userId, { isShowingStockData: false, lastStockDisplayTime: Date.now() });
+      sessionManager.updateDisplayState(userId, { isShowingStockData: false, lastStockDisplayTime: Date.now() });
       
       // Only trigger listening status if we were previously showing stock data
       // This prevents unnecessary triggers when user wasn't viewing anything
@@ -1924,12 +2056,14 @@ class StockTrackerApp extends AppServer {
     if (removeMatch) {
       // Remove dashes from ticker symbol (common transcription issue)
       const ticker = removeMatch[1].toUpperCase().replace(/[\s-]+/g, '');
-      const watchlist = userWatchlists.get(userId);
+      const sessionManager = SessionManager.getInstance();
+      const watchlist = sessionManager.getWatchlist(userId);
+      
       if (watchlist) {
         const stockIndex = watchlist.findIndex(s => s.ticker === ticker);
         if (stockIndex !== -1 && !watchlist[stockIndex].isPinned) {
-          watchlist.splice(stockIndex, 1);
-          this.saveWatchlist(userId, session);
+          const updatedWatchlist = watchlist.filter((_, index) => index !== stockIndex);
+          sessionManager.updateWatchlist(userId, updatedWatchlist);
           
           // Show confirmation
           this.showCommandFeedback(session, '🗑️ Stock Removed', `${ticker} removed from watchlist`);
@@ -2014,7 +2148,8 @@ class StockTrackerApp extends AppServer {
       return "Error: Ticker symbol is required";
     }
 
-    const watchlist = userWatchlists.get(userId) || [];
+    const sessionManager = SessionManager.getInstance();
+    const watchlist = sessionManager.getWatchlist(userId);
     
     // Check if stock is already on the list
     if (watchlist.some(stock => stock.ticker === ticker.toUpperCase())) {
@@ -2022,14 +2157,15 @@ class StockTrackerApp extends AppServer {
     }
 
     // Add new stock
-    watchlist.push({
+    const newStock: Stock = {
       ticker: ticker.toUpperCase(),
       price: null,
       changePercent: null,
       isPinned: false
-    });
+    };
 
-    userWatchlists.set(userId, watchlist);
+    const updatedWatchlist = [...watchlist, newStock];
+    sessionManager.updateWatchlist(userId, updatedWatchlist);
     
     return `Added ${ticker.toUpperCase()} to your watchlist`;
   }
@@ -2045,8 +2181,9 @@ class StockTrackerApp extends AppServer {
       return "Error: Ticker symbol is required";
     }
 
-    const watchlist = userWatchlists.get(userId);
-    if (!watchlist) {
+    const sessionManager = SessionManager.getInstance();
+    const watchlist = sessionManager.getWatchlist(userId);
+    if (!watchlist || watchlist.length === 0) {
       return "You don't have a watchlist yet";
     }
 
@@ -2059,7 +2196,8 @@ class StockTrackerApp extends AppServer {
       return `${ticker.toUpperCase()} is pinned and cannot be removed. Unpin it first.`;
     }
 
-    watchlist.splice(stockIndex, 1);
+    const updatedWatchlist = watchlist.filter((_, index) => index !== stockIndex);
+    sessionManager.updateWatchlist(userId, updatedWatchlist);
     return `Removed ${ticker.toUpperCase()} from your watchlist`;
   }
 
@@ -2074,17 +2212,20 @@ class StockTrackerApp extends AppServer {
       return "Error: Ticker symbol is required";
     }
 
-    const watchlist = userWatchlists.get(userId);
-    if (!watchlist) {
+    const sessionManager = SessionManager.getInstance();
+    const watchlist = sessionManager.getWatchlist(userId);
+    if (!watchlist || watchlist.length === 0) {
       return "You don't have a watchlist yet";
     }
 
-    const stock = watchlist.find(s => s.ticker === ticker.toUpperCase());
-    if (!stock) {
+    const stockIndex = watchlist.findIndex(s => s.ticker === ticker.toUpperCase());
+    if (stockIndex === -1) {
       return `${ticker.toUpperCase()} is not in your watchlist`;
     }
 
-    stock.isPinned = true;
+    const updatedWatchlist = [...watchlist];
+    updatedWatchlist[stockIndex] = { ...updatedWatchlist[stockIndex], isPinned: true };
+    sessionManager.updateWatchlist(userId, updatedWatchlist);
     return `Pinned ${ticker.toUpperCase()} to your watchlist`;
   }
 
@@ -2093,7 +2234,8 @@ class StockTrackerApp extends AppServer {
    */
   private async handleGetWatchlistTool(toolCall: any): Promise<string> {
     const userId = toolCall.userId;
-    const watchlist = userWatchlists.get(userId);
+    const sessionManager = SessionManager.getInstance();
+    const watchlist = sessionManager.getWatchlist(userId);
 
     if (!watchlist || watchlist.length === 0) {
       return "Your watchlist is empty. Add some stocks to get started!";
@@ -2172,7 +2314,8 @@ class StockTrackerApp extends AppServer {
    * Adds a stock to the user's watchlist
    */
   private addStock(userId: string, ticker: string): boolean {
-    const watchlist = userWatchlists.get(userId) || [];
+    const sessionManager = SessionManager.getInstance();
+    const watchlist = sessionManager.getWatchlist(userId);
     
     // Check if stock is already on the list
     if (watchlist.some(stock => stock.ticker === ticker)) {
@@ -2181,14 +2324,15 @@ class StockTrackerApp extends AppServer {
     }
 
     // Add new stock
-    watchlist.push({
+    const newStock: Stock = {
       ticker,
       price: null,
       changePercent: null,
       isPinned: false
-    });
+    };
 
-    userWatchlists.set(userId, watchlist);
+    const updatedWatchlist = [...watchlist, newStock];
+    sessionManager.updateWatchlist(userId, updatedWatchlist);
     console.log('Stock added to watchlist', { ticker, userId });
     return true;
   }
@@ -2203,12 +2347,15 @@ class StockTrackerApp extends AppServer {
   }
 
   /**
-   * Updates watchlist data by fetching current prices with cache optimization
+   * Updates watchlist data using Phase 2 optimizations (batch API + intelligent cache)
    */
   private async updateWatchlistData(userId: string, session: AppSession): Promise<void> {
-    const watchlist = userWatchlists.get(userId);
+    const sessionManager = SessionManager.getInstance();
+    const batchApiManager = BatchApiManager.getInstance();
+    const intelligentCache = IntelligentCache.getInstance();
+    const watchlist = sessionManager.getWatchlist(userId);
     
-    if (!watchlist) {
+    if (!watchlist || watchlist.length === 0) {
       return;
     }
 
@@ -2216,39 +2363,27 @@ class StockTrackerApp extends AppServer {
       // Get current timeframe from settings
       const timeframe = session.settings.get<'1D' | '1W' | '1M' | '1Y'>('timeframe', '1D');
       
-      // Get cache instance
-      const cache = StockDataCache.getInstance();
-      
-      // Process stocks with cache optimization
+      // Process stocks with intelligent cache and batch API
       const dataPromises = watchlist.map(async (stock) => {
-        // Check if we have recent cached data (within 30 seconds)
-        const cachedData = cache.getPriceData(stock.ticker);
-        const now = Date.now();
-        const cacheAge = cachedData ? now - cachedData.timestamp : Infinity;
-        const CACHE_FRESHNESS_THRESHOLD = 30 * 1000; // 30 seconds
+        // Check intelligent cache first
+        const cachedData = intelligentCache.getData(stock.ticker);
         
-        if (cachedData && cacheAge < CACHE_FRESHNESS_THRESHOLD) {
-          // Use cached data if it's fresh enough
-          console.log(`Using cached data for ${stock.ticker} (age: ${Math.round(cacheAge/1000)}s)`);
-          
-          // Get cached percentage change
-          const cachedPercentage = cache.getCachedPercentageChange(stock.ticker);
-          const changePercent = cachedPercentage !== null ? cachedPercentage : 0.0;
-          
+        if (cachedData) {
+          console.log(`Using intelligent cache for ${stock.ticker}`);
           return {
             ticker: stock.ticker,
             price: cachedData.price,
-            changePercent: changePercent
+            changePercent: cachedData.changePercent
           };
         } else {
-          // Fetch fresh data if cache is stale or missing
-          console.log(`Fetching fresh data for ${stock.ticker}`);
-          const result = await this.fetchStockData(stock.ticker, timeframe);
+          // Fetch fresh data using batch API manager
+          console.log(`Fetching fresh data for ${stock.ticker} via batch API`);
+          const result = await batchApiManager.fetchStockData(stock.ticker, 'normal');
           
-          // Store the new data in cache for future use
-          if (result?.price) {
-            cache.storePriceData(stock.ticker, result.price);
-            console.log(`Cached fresh data for ${stock.ticker}`);
+          // Store in intelligent cache
+          if (result) {
+            intelligentCache.storeData(stock.ticker, result);
+            console.log(`Stored ${stock.ticker} in intelligent cache`);
           }
           
           return {
@@ -2262,13 +2397,17 @@ class StockTrackerApp extends AppServer {
       const results = await Promise.all(dataPromises);
       
       // Update stock data
+      const updatedWatchlist = [...watchlist];
       results.forEach((result) => {
-        const stockIndex = watchlist.findIndex(stock => stock.ticker === result.ticker);
+        const stockIndex = updatedWatchlist.findIndex(stock => stock.ticker === result.ticker);
         if (stockIndex !== -1 && result.price !== null) {
-          watchlist[stockIndex].price = result.price;
-          watchlist[stockIndex].changePercent = result.changePercent;
+          updatedWatchlist[stockIndex].price = result.price;
+          updatedWatchlist[stockIndex].changePercent = result.changePercent;
         }
       });
+
+      // Update session with new watchlist data
+      sessionManager.updateWatchlist(userId, updatedWatchlist);
 
       // Display updated watchlist
       this.displayWatchlist(userId, session);
@@ -2291,12 +2430,14 @@ class StockTrackerApp extends AppServer {
   }
 
   /**
-   * Displays the watchlist on the smart glasses with simple, reliable layout
+   * Displays the watchlist on the smart glasses with adaptive layout
    */
   private displayWatchlist(userId: string, session: AppSession): void {
-    const watchlist = userWatchlists.get(userId);
+    const sessionManager = SessionManager.getInstance();
+    const adaptiveDisplay = AdaptiveDisplay.getInstance();
+    const watchlist = sessionManager.getWatchlist(userId);
     
-    if (!watchlist) {
+    if (!watchlist || watchlist.length === 0) {
       console.log('No watchlist found for user:', userId);
       return;
     }
@@ -2304,22 +2445,23 @@ class StockTrackerApp extends AppServer {
     console.log('Displaying watchlist for user:', userId, 'stocks:', watchlist.length);
 
     // Set flag indicating stock data is being displayed
-    userDisplayState.set(userId, { isShowingStockData: true, lastStockDisplayTime: Date.now() });
+    sessionManager.updateDisplayState(userId, { isShowingStockData: true, lastStockDisplayTime: Date.now() });
 
     // Get current settings
     const timeframe = session.settings.get<'1D' | '1W' | '1M' | '1Y'>('timeframe', '1D');
 
     if (watchlist.length === 0) {
-      // Show empty state with simple text wall
+      // Show empty state with adaptive text wall
       try {
+        const emptyContent = adaptiveDisplay.createTextWallContent([]);
         session.layouts.showTextWall(
-          'Stock Tracker\nNo stocks added yet.\nSay "Stock tracker add AAPL"',
+          emptyContent,
           {
             view: ViewType.MAIN,
             durationMs: 5000
           }
         );
-        console.log('Successfully displayed empty watchlist');
+        console.log('Successfully displayed empty watchlist (adaptive)');
       } catch (error) {
         console.error('Error showing empty watchlist:', error);
       }
@@ -2329,16 +2471,49 @@ class StockTrackerApp extends AppServer {
     // For single stock, show detailed info
     if (watchlist.length === 1) {
       const stock = watchlist[0];
-      this.displaySingleStock(session, stock, timeframe);
+      this.displaySingleStockAdaptive(session, stock, timeframe);
       return;
     }
 
-    // For multiple stocks, show summary
-    this.displayMultipleStocks(session, watchlist, timeframe);
+    // For multiple stocks, show adaptive summary
+    this.displayMultipleStocksAdaptive(session, watchlist, timeframe);
   }
 
   /**
-   * Displays a single stock with simple layout
+   * Displays a single stock with adaptive layout
+   */
+  private displaySingleStockAdaptive(session: AppSession, stock: Stock, timeframe: string): void {
+    const adaptiveDisplay = AdaptiveDisplay.getInstance();
+    
+    try {
+      if (stock.price === null || stock.changePercent === null) {
+        session.layouts.showTextWall(
+          `Stock Tracker\n${stock.ticker}\nLoading stock data...`,
+          {
+            view: ViewType.MAIN,
+            durationMs: 3000
+          }
+        );
+      } else {
+        // Use adaptive display for single stock
+        const content = adaptiveDisplay.createDetailedStockContent(stock);
+        session.layouts.showTextWall(
+          content,
+          {
+            view: ViewType.MAIN,
+            durationMs: 8000
+          }
+        );
+      }
+      console.log('Successfully displayed single stock view (adaptive)');
+    } catch (error) {
+      console.error('Error displaying single stock:', error);
+      this.simpleFallback(session, stock);
+    }
+  }
+
+  /**
+   * Displays a single stock with simple layout (fallback)
    */
   private displaySingleStock(session: AppSession, stock: Stock, timeframe: string): void {
     try {
@@ -2371,7 +2546,30 @@ class StockTrackerApp extends AppServer {
   }
 
   /**
-   * Displays multiple stocks with simple layout
+   * Displays multiple stocks with adaptive layout
+   */
+  private displayMultipleStocksAdaptive(session: AppSession, watchlist: Stock[], timeframe: string): void {
+    const adaptiveDisplay = AdaptiveDisplay.getInstance();
+    
+    try {
+      // Use adaptive display for multiple stocks
+      const content = adaptiveDisplay.createTextWallContent(watchlist);
+      session.layouts.showTextWall(
+        content,
+        {
+          view: ViewType.MAIN,
+          durationMs: 8000
+        }
+      );
+      console.log('Successfully displayed multiple stocks view (adaptive)');
+    } catch (error) {
+      console.error('Error displaying multiple stocks:', error);
+      this.displayMultipleStocks(session, watchlist, timeframe); // Fallback to original method
+    }
+  }
+
+  /**
+   * Displays multiple stocks with simple layout (fallback)
    */
   private displayMultipleStocks(session: AppSession, watchlist: Stock[], timeframe: string): void {
     // Create simple summary text
