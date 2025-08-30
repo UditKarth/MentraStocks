@@ -47,6 +47,7 @@ const userRefreshIntervals: Map<string, NodeJS.Timeout> = new Map();
 const userCleanupFunctions: Map<string, Array<() => void>> = new Map();
 const userLastActivity: Map<string, number> = new Map(); // Track user activity
 const userFocusState: Map<string, { ticker: string; isFocused: boolean }> = new Map(); // Track focus state
+const userDisplayState: Map<string, { isShowingStockData: boolean; lastStockDisplayTime: number }> = new Map(); // Track when stock data is being displayed
 
 // Voice detection state management
 const voiceDetectionState: Map<string, {
@@ -318,6 +319,9 @@ class VoiceDetectionManager {
     } else if (transcript.includes('details') || transcript.includes('info')) {
       console.log('Processing details command', { transcript });
       this.handleShowDetails(session, userId, transcript);
+    } else if (transcript.includes('clear watchlist') || transcript.includes('clear the watchlist') || transcript.includes('remove focus')) {
+      console.log('Processing clear display command', { transcript });
+      this.handleClearDisplayCommand(session, userId);
     } else {
       console.log('Unknown voice command', { transcript });
       this.showCommandFeedbackAndRestore(session, userId, 'Command not recognized', 'Try saying "Stock tracker help" for available commands');
@@ -392,6 +396,20 @@ class VoiceDetectionManager {
     } else {
       console.error('App instance not available for command delegation');
       this.showCommandFeedback(session, 'Error', 'App not ready for commands');
+    }
+  }
+
+  private static handleClearDisplayCommand(session: AppSession, userId: string): void {
+    if (this.appInstance) {
+      try {
+        this.appInstance.handleClearDisplayCommand(session, userId);
+      } catch (error) {
+        console.error('Error in handleClearDisplayCommand delegation:', error);
+        this.showCommandFeedbackAndRestore(session, userId, 'Error', 'Failed to process clear display command');
+      }
+    } else {
+      console.error('App instance not available for command delegation');
+      this.showCommandFeedbackAndRestore(session, userId, 'Error', 'App not ready for commands');
     }
   }
 
@@ -1172,12 +1190,12 @@ class StockTrackerApp extends AppServer {
   /**
    * Shows real-time transcription feedback to the user
    */
-  private showTranscriptionFeedback(session: AppSession, data: TranscriptionData): void {
+  private showTranscriptionFeedback(session: AppSession, data: TranscriptionData, userId?: string): void {
     const transcript = data.text.trim();
     
     if (!transcript) {
       // Show listening indicator when no transcript yet
-      this.showListeningStatus(session, true);
+      this.showListeningStatus(session, true, userId);
       return;
     }
 
@@ -1191,7 +1209,7 @@ class StockTrackerApp extends AppServer {
         }
       );
       // Hide listening indicator after final transcript
-      this.showListeningStatus(session, false);
+      this.showListeningStatus(session, false, userId);
       
       // Show processing indicator for final transcript
       setTimeout(() => {
@@ -1200,16 +1218,25 @@ class StockTrackerApp extends AppServer {
     } else {
       // Interim transcript - don't show feedback to avoid layout conflicts
       // Show listening indicator during interim
-      this.showListeningStatus(session, true);
+      this.showListeningStatus(session, true, userId);
     }
   }
 
   /**
    * Shows or hides the listening status indicator
    */
-  private showListeningStatus(session: AppSession, isListening: boolean): void {
+  private showListeningStatus(session: AppSession, isListening: boolean, userId?: string): void {
     try {
       if (isListening) {
+        // Check if user is currently viewing stock data
+        if (userId) {
+          const displayState = userDisplayState.get(userId);
+          if (displayState && displayState.isShowingStockData) {
+            console.log('Skipping listening status - user is viewing stock data');
+            return; // Don't override stock data display
+          }
+        }
+
         // Show listening indicator using simple text wall
         session.layouts.showTextWall(
           '🎤 Ready to listen...\nSay "Stock tracker help" for commands',
@@ -1228,10 +1255,68 @@ class StockTrackerApp extends AppServer {
   }
 
   /**
+   * Trigger-based listening status - only shows when user stops viewing stock data
+   * This is more efficient than checking on every transcription
+   */
+  private triggerListeningStatus(session: AppSession, userId: string): void {
+    try {
+      const displayState = userDisplayState.get(userId);
+      if (!displayState || !displayState.isShowingStockData) {
+        // User is not viewing stock data, show listening status
+        session.layouts.showTextWall(
+          '🎤 Ready to listen...\nSay "Stock tracker help" for commands',
+          {
+            view: ViewType.MAIN,
+            durationMs: 3000
+          }
+        );
+        console.log('Triggered listening status for user:', userId);
+      } else {
+        console.log('Skipping triggered listening status - user is viewing stock data');
+      }
+    } catch (error) {
+      console.error('Error triggering listening status:', error);
+    }
+  }
+
+  /**
+   * Clear stock display state and trigger listening status if appropriate
+   * This is the optimized trigger point for showing listening status
+   */
+  public clearStockDisplayAndTriggerListening(session: AppSession, userId: string): void {
+    try {
+      const displayState = userDisplayState.get(userId);
+      const wasShowingStockData = displayState?.isShowingStockData || false;
+      
+      // Clear the stock display state
+      userDisplayState.set(userId, { isShowingStockData: false, lastStockDisplayTime: Date.now() });
+      
+      // Only trigger listening status if we were previously showing stock data
+      // This prevents unnecessary triggers when user wasn't viewing anything
+      if (wasShowingStockData) {
+        console.log('Stock display cleared, triggering listening status for user:', userId);
+        // Add a small delay to ensure the display has time to clear
+        setTimeout(() => {
+          this.triggerListeningStatus(session, userId);
+        }, 500);
+      } else {
+        console.log('No stock display was active, skipping listening status trigger');
+      }
+    } catch (error) {
+      console.error('Error clearing stock display and triggering listening:', error);
+    }
+  }
+
+  /**
    * Shows feedback for command processing
    */
-  private showCommandFeedback(session: AppSession, title: string, message: string): void {
+  private showCommandFeedback(session: AppSession, title: string, message: string, userId?: string, skipTrigger: boolean = false): void {
     try {
+      // Use optimized trigger approach when clearing stock display (unless skipped)
+      if (userId && !skipTrigger) {
+        this.clearStockDisplayAndTriggerListening(session, userId);
+      }
+
       // Show processing indicator first
       this.showProcessingIndicator(session);
       
@@ -1481,7 +1566,22 @@ class StockTrackerApp extends AppServer {
     // Show watchlist
     this.displayWatchlist(userId, session);
     
-    this.showCommandFeedback(session, '📊 Watchlist View', 'Returned to watchlist view');
+    // Don't trigger listening status here since we're showing watchlist data
+    this.showCommandFeedback(session, '📊 Watchlist View', 'Returned to watchlist view', userId, true);
+  }
+
+  /**
+   * Handles the clear display command to clear current display and show listening status
+   */
+  handleClearDisplayCommand(session: AppSession, userId: string): void {
+    // Clear focus state
+    userFocusState.set(userId, { ticker: '', isFocused: false });
+
+    // Clear any current display and trigger listening status
+    this.clearStockDisplayAndTriggerListening(session, userId);
+    
+    // Show feedback that display was cleared
+    this.showCommandFeedback(session, '🗑️ Display Cleared', 'Cleared current display', userId, true);
   }
 
   /**
@@ -1502,6 +1602,10 @@ class StockTrackerApp extends AppServer {
    */
   private showDetailedStockView(session: AppSession, ticker: string, stockName: string, data: any, userId?: string): void {
     try {
+      // Set flag indicating stock data is being displayed
+      if (userId) {
+        userDisplayState.set(userId, { isShowingStockData: true, lastStockDisplayTime: Date.now() });
+      }
       const arrow = data.changePercent >= 0 ? '▲' : '▼';
       const changeText = `${arrow}${Math.abs(data.changePercent).toFixed(2)}%`;
       const changeColor = data.changePercent >= 0 ? '🟢' : '🔴';
@@ -1640,7 +1744,7 @@ class StockTrackerApp extends AppServer {
    */
   private async handleAddStock(session: AppSession, userId: string, transcript: string): Promise<void> {
     // Show processing feedback
-    this.showCommandFeedback(session, 'Processing...', 'Looking up stock information');
+    this.showCommandFeedback(session, 'Processing...', 'Looking up stock information', userId);
     
     // Add a small delay to prevent rapid successive additions
     await new Promise(resolve => setTimeout(resolve, 100));
@@ -2158,6 +2262,9 @@ class StockTrackerApp extends AppServer {
     }
 
     console.log('Displaying watchlist for user:', userId, 'stocks:', watchlist.length);
+
+    // Set flag indicating stock data is being displayed
+    userDisplayState.set(userId, { isShowingStockData: true, lastStockDisplayTime: Date.now() });
 
     // Get current settings
     const timeframe = session.settings.get<'1D' | '1W' | '1M' | '1Y'>('timeframe', '1D');

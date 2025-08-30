@@ -128,6 +128,11 @@ The app responds to voice commands with the activation phrase "Stock tracker":
 - "Stock tracker details AAPL" - Show detailed stock information
 - "Stock tracker details G-O-O-G-L" - Show details with dashes (handles transcription)
 
+### Clearing Display
+- "Stock tracker clear watchlist" - Clear current display and show listening status
+- "Stock tracker clear the watchlist" - Alternative command for clearing display
+- "Stock tracker remove focus" - Clear focused stock view and show listening status
+
 ### Getting Help
 - "Stock tracker help" - Show available commands
 
