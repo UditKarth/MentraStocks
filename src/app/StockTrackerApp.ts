@@ -7,8 +7,6 @@ import {
   TranscriptionData,
   StreamType,
 } from '@mentra/sdk';
-import axios from 'axios';
-import express from 'express';
 import { stockApiManager, YahooFinanceProvider } from '../utils/stock-api';
 import { CompanyLookup } from '../utils/company-lookup';
 import { TickerDatabase, TickerSymbols } from '../utils/ticker-database';
@@ -952,7 +950,8 @@ class StockTrackerApp extends AppServer {
         // Process through smart voice processor for deduplication
         const wasProcessed = smartVoiceProcessor.processTranscription(data.text, data.isFinal);
         
-        if (wasProcessed) {
+        // For final transcriptions, always process them even if filtered by smart processor
+        if (wasProcessed || data.isFinal) {
           // Use main voice detection manager
           if (!VoiceDetectionManager.isAppInstanceSet()) {
             console.log('Setting app instance for voice detection');
@@ -2458,7 +2457,7 @@ class StockTrackerApp extends AppServer {
           emptyContent,
           {
             view: ViewType.MAIN,
-            durationMs: 5000
+            durationMs: -1
           }
         );
         console.log('Successfully displayed empty watchlist (adaptive)');
@@ -2491,7 +2490,7 @@ class StockTrackerApp extends AppServer {
           `Stock Tracker\n${stock.ticker}\nLoading stock data...`,
           {
             view: ViewType.MAIN,
-            durationMs: 3000
+            durationMs: -1
           }
         );
       } else {
@@ -2501,7 +2500,7 @@ class StockTrackerApp extends AppServer {
           content,
           {
             view: ViewType.MAIN,
-            durationMs: 8000
+            durationMs: -1
           }
         );
       }
@@ -2522,7 +2521,7 @@ class StockTrackerApp extends AppServer {
           `Stock Tracker\n${stock.ticker}\nLoading stock data...`,
           {
             view: ViewType.MAIN,
-            durationMs: 3000
+            durationMs: -1
           }
         );
       } else {
@@ -2534,7 +2533,7 @@ class StockTrackerApp extends AppServer {
           `Stock Tracker (${timeframe})\n${pinIcon}${stock.ticker}\n$${stock.price.toFixed(2)} ${changeText}`,
           {
             view: ViewType.MAIN,
-            durationMs: 8000
+            durationMs: -1
           }
         );
       }
@@ -2558,7 +2557,7 @@ class StockTrackerApp extends AppServer {
         content,
         {
           view: ViewType.MAIN,
-          durationMs: 8000
+          durationMs: -1
         }
       );
       console.log('Successfully displayed multiple stocks view (adaptive)');

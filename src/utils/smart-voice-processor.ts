@@ -123,11 +123,25 @@ export class SmartVoiceProcessor {
     // Normalize text for deduplication
     const normalizedText = this.normalizeText(text);
     
-    // Check for duplicates
-    if (this.isDuplicate(normalizedText)) {
-      this.state.duplicateCount++;
-      console.log('Duplicate transcription ignored:', normalizedText.substring(0, 50));
-      return false;
+    // For final transcriptions, be less aggressive with deduplication
+    // Only check for exact duplicates, not similar ones
+    if (isFinal) {
+      const now = Date.now();
+      const windowStart = now - this.config.deduplicationWindow;
+      const lastSeen = this.recentTranscriptions.get(normalizedText);
+      
+      if (lastSeen && lastSeen > windowStart) {
+        this.state.duplicateCount++;
+        console.log('Exact duplicate final transcription ignored:', normalizedText.substring(0, 50));
+        return false;
+      }
+    } else {
+      // For interim transcriptions, use full deduplication logic
+      if (this.isDuplicate(normalizedText)) {
+        this.state.duplicateCount++;
+        console.log('Duplicate interim transcription ignored:', normalizedText.substring(0, 50));
+        return false;
+      }
     }
     
     // Add to recent transcriptions
