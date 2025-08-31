@@ -9,7 +9,7 @@ import {
 } from '@mentra/sdk';
 import { stockApiManager, YahooFinanceProvider } from '../utils/stock-api';
 import { CompanyLookup } from '../utils/company-lookup';
-import { TickerDatabase, TickerSymbols } from '../utils/ticker-database';
+import { TickerSymbols } from '../utils/ticker-database';
 import { StockDataCache } from '../utils/stock-cache';
 import { LazyTickerDatabase } from '../utils/lazy-ticker-database';
 import { SessionManager } from '../utils/session-manager';
@@ -54,6 +54,11 @@ const userCleanupFunctions: Map<string, Array<() => void>> = new Map();
 const userLastActivity: Map<string, number> = new Map(); // Track user activity
 const userFocusState: Map<string, { ticker: string; isFocused: boolean }> = new Map(); // Track focus state
 const userDisplayState: Map<string, { isShowingStockData: boolean; lastStockDisplayTime: number }> = new Map(); // Track when stock data is being displayed
+
+// Initialize optimization instances
+const intelligentCache = IntelligentCache.getInstance();
+const lazyTickerDb = LazyTickerDatabase.getInstance();
+const stockDataCache = StockDataCache.getInstance();
 
 // Voice detection state management
 const voiceDetectionState: Map<string, {
@@ -646,10 +651,12 @@ class StockTrackerApp extends AppServer {
     });
 
     // Custom endpoint to get memory diagnostics
-    app.get('/api/memory', (req, res) => {
+          app.get('/api/memory', async (req, res) => {
       const memoryUsage = process.memoryUsage();
-      const tickerDb = TickerDatabase.getInstance();
-      const dbStats = tickerDb.getMemoryStats();
+      const tickerDb = LazyTickerDatabase.getInstance();
+      const dbStats = await tickerDb.getMemoryStats();
+      const cacheStats = intelligentCache.getStats();
+      const priceCacheStats = stockDataCache.getStats();
       
       res.json({
         processMemory: {
@@ -658,7 +665,11 @@ class StockTrackerApp extends AppServer {
           heapTotal: Math.round(memoryUsage.heapTotal / 1024 / 1024) + ' MB',
           external: Math.round(memoryUsage.external / 1024 / 1024) + ' MB'
         },
-        tickerDatabase: dbStats,
+        optimizations: {
+          tickerDatabase: dbStats,
+          intelligentCache: cacheStats,
+          priceTrackingCache: priceCacheStats
+        },
         userSessions: {
           activeUsers: userWatchlists.size,
           activeIntervals: userRefreshIntervals.size,
@@ -716,6 +727,22 @@ class StockTrackerApp extends AppServer {
       } else {
         res.status(404).json({ error: 'User not found', userId });
       }
+    });
+
+    // Debug endpoint to show price tracking data for a ticker
+    app.get('/api/debug/price-tracking/:ticker', (req, res) => {
+      const { ticker } = req.params;
+      const priceData = stockDataCache.getPriceData(ticker.toUpperCase());
+      const cachedPercentageChange = stockDataCache.getCachedPercentageChange(ticker.toUpperCase());
+      
+      res.json({
+        ticker: ticker.toUpperCase(),
+        priceData,
+        cachedPercentageChange,
+        hasValidPercentageData: stockDataCache.hasValidPercentageData(ticker.toUpperCase()),
+        previousPrice: stockDataCache.getPreviousPrice(ticker.toUpperCase()),
+        timestamp: new Date().toISOString()
+      });
     });
 
     // Custom endpoint to add stock via API (for testing)
@@ -1549,8 +1576,8 @@ class StockTrackerApp extends AppServer {
       
       if (detailedData) {
         // Get stock name from database or use ticker
-        const tickerDb = TickerDatabase.getInstance();
-        const tickerMatch = tickerDb.searchBySymbol(ticker);
+        const tickerDb = LazyTickerDatabase.getInstance();
+        const tickerMatch = await tickerDb.searchBySymbol(ticker);
         const stockName = tickerMatch ? tickerMatch.name : ticker;
         
         this.showDetailedStockView(session, ticker, stockName, detailedData, userId);
@@ -1629,8 +1656,8 @@ class StockTrackerApp extends AppServer {
       const cleanCompanyName = companyName.toUpperCase().replace(/[\s-]+/g, '');
       if (cleanCompanyName.length <= 5 && /^[A-Z]+$/.test(cleanCompanyName) && cleanCompanyName.length >= 2) {
         // Check if this is actually a known ticker symbol
-        const tickerDb = TickerDatabase.getInstance();
-        const tickerMatch = tickerDb.searchBySymbol(cleanCompanyName);
+        const tickerDb = LazyTickerDatabase.getInstance();
+        const tickerMatch = await tickerDb.searchBySymbol(cleanCompanyName);
         
         if (tickerMatch) {
           // It's a valid ticker symbol
@@ -1717,12 +1744,54 @@ class StockTrackerApp extends AppServer {
   }
 
   /**
-   * Fetches detailed stock data for focus view
+   * Gets enhanced stock data with price tracking information
+   */
+  private getEnhancedStockData(ticker: string, baseData: any): any {
+    // Get price tracking data from cache
+    const priceTrackingData = stockDataCache.getPriceData(ticker);
+    const cachedPercentageChange = stockDataCache.getCachedPercentageChange(ticker);
+    
+    return {
+      ...baseData,
+      priceTracking: {
+        hasHistoricalData: stockDataCache.hasValidPercentageData(ticker),
+        previousPrice: stockDataCache.getPreviousPrice(ticker),
+        cachedPercentageChange: cachedPercentageChange,
+        lastUpdated: priceTrackingData?.timestamp
+      }
+    };
+  }
+
+  /**
+   * Fetches detailed stock data for focus view with caching
    */
   private async fetchDetailedStockData(ticker: string, session: AppSession): Promise<any> {
     try {
       const timeframe = session.settings.get<'1D' | '1W' | '1M' | '1Y'>('timeframe', '1D');
-      return await stockApiManager.fetchStockData(ticker, timeframe);
+      
+      // Check cache first
+      const cachedData = intelligentCache.getData(ticker);
+      if (cachedData) {
+        console.log(`Using cached data for ${ticker} (${timeframe})`);
+        return cachedData;
+      }
+      
+      // Fetch fresh data
+      const freshData = await stockApiManager.fetchStockData(ticker, timeframe);
+      
+      // Cache the result
+      if (freshData) {
+        intelligentCache.storeData(ticker, freshData);
+        console.log(`Cached fresh data for ${ticker} (${timeframe})`);
+        
+        // Also store in price tracking cache for percentage change analysis
+        if (freshData.price) {
+          stockDataCache.storePriceData(ticker, freshData.price);
+          console.log(`Stored price data for ${ticker} tracking`);
+        }
+      }
+      
+      return freshData;
     } catch (error) {
       console.error('Error fetching detailed stock data:', error);
       return null;
@@ -1957,8 +2026,8 @@ class StockTrackerApp extends AppServer {
       const cleanCompanyName = companyName.toUpperCase().replace(/[\s-]+/g, '');
       if (cleanCompanyName.length <= 5 && /^[A-Z]+$/.test(cleanCompanyName) && cleanCompanyName.length >= 2) {
         // Check if this is actually a known ticker symbol
-        const tickerDb = TickerDatabase.getInstance();
-        const tickerMatch = tickerDb.searchBySymbol(cleanCompanyName);
+        const tickerDb = LazyTickerDatabase.getInstance();
+        const tickerMatch = await tickerDb.searchBySymbol(cleanCompanyName);
         
         if (tickerMatch) {
           // It's a valid ticker symbol
