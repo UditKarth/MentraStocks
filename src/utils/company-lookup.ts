@@ -23,6 +23,60 @@ export interface CompanyLookupResult {
 export class CompanyLookup {
   private static tickerDb: TickerDatabase;
 
+  // Common company name mappings for better search results
+  private static readonly COMMON_COMPANY_NAMES: Map<string, string> = new Map([
+    ['google', 'alphabet'],
+    ['alphabet', 'alphabet'],
+    ['apple', 'apple'],
+    ['microsoft', 'microsoft'],
+    ['amazon', 'amazon'],
+    ['tesla', 'tesla'],
+    ['meta', 'meta'],
+    ['facebook', 'meta'],
+    ['netflix', 'netflix'],
+    ['nvidia', 'nvidia'],
+    ['amd', 'amd'],
+    ['intel', 'intel'],
+    ['ibm', 'ibm'],
+    ['oracle', 'oracle'],
+    ['salesforce', 'salesforce'],
+    ['adobe', 'adobe'],
+    ['paypal', 'paypal'],
+    ['visa', 'visa'],
+    ['mastercard', 'mastercard'],
+    ['disney', 'disney'],
+    ['coca cola', 'coca-cola'],
+    ['coke', 'coca-cola'],
+    ['mcdonalds', 'mcdonalds'],
+    ['starbucks', 'starbucks'],
+    ['walmart', 'walmart'],
+    ['target', 'target'],
+    ['home depot', 'home depot'],
+    ['lowes', 'lowes'],
+    ['costco', 'costco'],
+    ['boeing', 'boeing'],
+    ['general electric', 'general electric'],
+    ['ge', 'general electric'],
+    ['ford', 'ford'],
+    ['general motors', 'general motors'],
+    ['gm', 'general motors'],
+    ['chevron', 'chevron'],
+    ['exxon', 'exxon'],
+    ['shell', 'shell'],
+    ['bp', 'bp'],
+    ['jpmorgan', 'jpmorgan'],
+    ['jpm', 'jpmorgan'],
+    ['bank of america', 'bank of america'],
+    ['boa', 'bank of america'],
+    ['wells fargo', 'wells fargo'],
+    ['goldman sachs', 'goldman sachs'],
+    ['morgan stanley', 'morgan stanley'],
+    ['blackrock', 'blackrock'],
+    ['berkshire hathaway', 'berkshire hathaway'],
+    ['berkshire', 'berkshire hathaway'],
+    ['brk', 'berkshire hathaway']
+  ]);
+
   /**
    * Initialize the ticker database
    */
@@ -63,7 +117,26 @@ export class CompanyLookup {
         };
       }
 
-      // Strategy 2: Search by company name
+      // Strategy 2: Check common company name mappings
+      const mappedName = this.COMMON_COMPANY_NAMES.get(normalizedName);
+      if (mappedName) {
+        console.log(`Using mapped company name: "${normalizedName}" -> "${mappedName}"`);
+        const mappedMatches = await tickerDb.searchByName(mappedName, 5);
+        if (mappedMatches.length > 0) {
+          const results: CompanyInfo[] = mappedMatches.map((ticker, index) => ({
+            ticker: ticker.symbol,
+            name: ticker.name,
+            confidence: Math.max(0.95 - (index * 0.1), 0.6) // High confidence for mapped names
+          }));
+
+          return {
+            success: true,
+            results
+          };
+        }
+      }
+
+      // Strategy 3: Search by original company name
       const nameMatches = await tickerDb.searchByName(normalizedName, 5);
       if (nameMatches.length > 0) {
         const results: CompanyInfo[] = nameMatches.map((ticker, index) => ({
@@ -78,7 +151,7 @@ export class CompanyLookup {
         };
       }
 
-      // Strategy 3: Return empty result
+      // Strategy 4: Return empty result
       return {
         success: false,
         results: [],

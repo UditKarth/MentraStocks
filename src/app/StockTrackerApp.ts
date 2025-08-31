@@ -9,7 +9,7 @@ import {
 } from '@mentra/sdk';
 import { stockApiManager, YahooFinanceProvider } from '../utils/stock-api';
 import { CompanyLookup } from '../utils/company-lookup';
-import { TickerSymbols } from '../utils/ticker-database';
+import { TickerDatabase, TickerSymbols } from '../utils/ticker-database';
 import { StockDataCache } from '../utils/stock-cache';
 import { LazyTickerDatabase } from '../utils/lazy-ticker-database';
 import { SessionManager } from '../utils/session-manager';
@@ -59,6 +59,7 @@ const userDisplayState: Map<string, { isShowingStockData: boolean; lastStockDisp
 const intelligentCache = IntelligentCache.getInstance();
 const lazyTickerDb = LazyTickerDatabase.getInstance();
 const stockDataCache = StockDataCache.getInstance();
+const fallbackTickerDb = TickerDatabase.getInstance();
 
 // Voice detection state management
 const voiceDetectionState: Map<string, {
@@ -655,6 +656,7 @@ class StockTrackerApp extends AppServer {
       const memoryUsage = process.memoryUsage();
       const tickerDb = LazyTickerDatabase.getInstance();
       const dbStats = await tickerDb.getMemoryStats();
+      const fallbackDbStats = fallbackTickerDb.getMemoryStats();
       const cacheStats = intelligentCache.getStats();
       const priceCacheStats = stockDataCache.getStats();
       
@@ -666,7 +668,8 @@ class StockTrackerApp extends AppServer {
           external: Math.round(memoryUsage.external / 1024 / 1024) + ' MB'
         },
         optimizations: {
-          tickerDatabase: dbStats,
+          lazyTickerDatabase: dbStats,
+          fallbackTickerDatabase: fallbackDbStats,
           intelligentCache: cacheStats,
           priceTrackingCache: priceCacheStats
         },
@@ -1576,8 +1579,7 @@ class StockTrackerApp extends AppServer {
       
       if (detailedData) {
         // Get stock name from database or use ticker
-        const tickerDb = LazyTickerDatabase.getInstance();
-        const tickerMatch = await tickerDb.searchBySymbol(ticker);
+        const tickerMatch = await this.searchTickerWithFallback(ticker);
         const stockName = tickerMatch ? tickerMatch.name : ticker;
         
         this.showDetailedStockView(session, ticker, stockName, detailedData, userId);
@@ -1656,8 +1658,7 @@ class StockTrackerApp extends AppServer {
       const cleanCompanyName = companyName.toUpperCase().replace(/[\s-]+/g, '');
       if (cleanCompanyName.length <= 5 && /^[A-Z]+$/.test(cleanCompanyName) && cleanCompanyName.length >= 2) {
         // Check if this is actually a known ticker symbol
-        const tickerDb = LazyTickerDatabase.getInstance();
-        const tickerMatch = await tickerDb.searchBySymbol(cleanCompanyName);
+        const tickerMatch = await this.searchTickerWithFallback(cleanCompanyName);
         
         if (tickerMatch) {
           // It's a valid ticker symbol
@@ -1741,6 +1742,60 @@ class StockTrackerApp extends AppServer {
     
     // Show feedback that display was cleared
     this.showCommandFeedback(session, '🗑️ Display Cleared', 'Cleared current display', userId, true);
+  }
+
+  /**
+   * Robust ticker search with fallback mechanism
+   */
+  private async searchTickerWithFallback(symbol: string): Promise<any> {
+    try {
+      // Try LazyTickerDatabase first (optimized)
+      const lazyResult = await lazyTickerDb.searchBySymbol(symbol);
+      if (lazyResult) {
+        console.log(`Found ticker ${symbol} in LazyTickerDatabase`);
+        return lazyResult;
+      }
+      
+      // Fallback to original TickerDatabase (more comprehensive)
+      const fallbackResult = fallbackTickerDb.searchBySymbol(symbol);
+      if (fallbackResult) {
+        console.log(`Found ticker ${symbol} in fallback TickerDatabase`);
+        return fallbackResult;
+      }
+      
+      console.log(`Ticker ${symbol} not found in either database`);
+      return null;
+    } catch (error) {
+      console.error(`Error searching for ticker ${symbol}:`, error);
+      return null;
+    }
+  }
+
+  /**
+   * Robust company name search with fallback mechanism
+   */
+  private async searchCompanyWithFallback(companyName: string): Promise<any[]> {
+    try {
+      // Try LazyTickerDatabase first (optimized)
+      const lazyResults = await lazyTickerDb.searchByName(companyName, 5);
+      if (lazyResults && lazyResults.length > 0) {
+        console.log(`Found ${lazyResults.length} matches for "${companyName}" in LazyTickerDatabase`);
+        return lazyResults;
+      }
+      
+      // Fallback to original TickerDatabase (more comprehensive)
+      const fallbackResults = fallbackTickerDb.searchByName(companyName, 5);
+      if (fallbackResults && fallbackResults.length > 0) {
+        console.log(`Found ${fallbackResults.length} matches for "${companyName}" in fallback TickerDatabase`);
+        return fallbackResults;
+      }
+      
+      console.log(`No matches found for "${companyName}" in either database`);
+      return [];
+    } catch (error) {
+      console.error(`Error searching for company "${companyName}":`, error);
+      return [];
+    }
   }
 
   /**
@@ -2026,8 +2081,7 @@ class StockTrackerApp extends AppServer {
       const cleanCompanyName = companyName.toUpperCase().replace(/[\s-]+/g, '');
       if (cleanCompanyName.length <= 5 && /^[A-Z]+$/.test(cleanCompanyName) && cleanCompanyName.length >= 2) {
         // Check if this is actually a known ticker symbol
-        const tickerDb = LazyTickerDatabase.getInstance();
-        const tickerMatch = await tickerDb.searchBySymbol(cleanCompanyName);
+        const tickerMatch = await this.searchTickerWithFallback(cleanCompanyName);
         
         if (tickerMatch) {
           // It's a valid ticker symbol
