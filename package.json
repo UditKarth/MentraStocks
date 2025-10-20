@@ -4,7 +4,7 @@
   "description": "StockTracker application for smart glasses using @mentra/sdk",
   "main": "src/app/StockTrackerApp.ts",
   "scripts": {
-    "start": "ts-node src/app/StockTrackerApp.ts",
+    "start": "node railway-start.js",
     "start:mock": "ts-node src/mock/StockTrackerApp-mock.ts",
     "dev": "tsx watch src/app/StockTrackerApp.ts",
     "dev:mock": "tsx watch src/mock/StockTrackerApp-mock.ts",

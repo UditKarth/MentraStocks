@@ -48,7 +48,7 @@ export const VOICE_PATTERNS = {
 export const ERROR_MESSAGES = {
   MISSING_API_KEY: 'AUGMENTOS_API_KEY environment variable is required.',
   MISSING_PACKAGE_NAME: 'PACKAGE_NAME environment variable is required.',
-  MISSING_ALPHA_VANTAGE_API_KEY: 'ALPHA_VANTAGE_API_KEY environment variable is optional (for Alpha Vantage fallback).',
+  MISSING_ALPHA_VANTAGE_API_KEY: 'ALPHA_VANTAGE_API_KEY environment variable is required for Alpha Vantage API.',
   INVALID_TICKER: 'Invalid ticker symbol provided.',
   STOCK_NOT_FOUND: 'Stock not found in watchlist.',
   WATCHLIST_FULL: 'Watchlist is full. Remove a stock or pin important ones.',

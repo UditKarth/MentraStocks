@@ -1,9 +1,10 @@
 /**
- * Stock API utilities using Yahoo Finance
+ * Stock API utilities using Alpha Vantage
  */
 
 import axios from 'axios';
 import { StockDataCache } from './stock-cache';
+import { ALPHA_VANTAGE_API_KEY } from './constants';
 
 export interface StockApiResponse {
   price: number;
@@ -36,94 +37,35 @@ export interface StockApiResponse {
 }
 
 /**
- * Yahoo Finance API Provider (No API key required)
+ * Alpha Vantage API Provider
  */
-export class YahooFinanceProvider {
-  name = 'Yahoo Finance';
+export class AlphaVantageProvider {
+  name = 'Alpha Vantage';
   private cache = StockDataCache.getInstance();
+  private apiKey: string;
+
+  constructor() {
+    if (!ALPHA_VANTAGE_API_KEY) {
+      throw new Error('ALPHA_VANTAGE_API_KEY environment variable is required for Alpha Vantage API');
+    }
+    this.apiKey = ALPHA_VANTAGE_API_KEY;
+  }
 
   async fetchStockData(ticker: string, timeframe: string): Promise<StockApiResponse | null> {
     try {
-      // Try multiple Yahoo Finance endpoints with better error handling
-      let priceData = null;
-      let metricsData = null;
-
-      // Method 1: Try the newer API endpoint first
-      try {
-        const priceResponse = await axios.get(`https://query1.finance.yahoo.com/v8/finance/chart/${ticker}`, {
-          params: {
-            interval: this.mapTimeframe(timeframe),
-            range: this.mapRange(timeframe),
-            includePrePost: false
-          },
-          timeout: 15000,
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': 'application/json, text/plain, */*',
-            'Accept-Language': 'en-US,en;q=0.9',
-            'Accept-Encoding': 'gzip, deflate, br',
-            'Connection': 'keep-alive',
-            'Sec-Fetch-Dest': 'empty',
-            'Sec-Fetch-Mode': 'cors',
-            'Sec-Fetch-Site': 'same-site'
-          }
-        });
-
-        if (priceResponse.data?.chart?.result?.[0]) {
-          priceData = priceResponse.data.chart.result[0];
-        }
-      } catch (error) {
-        console.log(`Yahoo Finance chart API failed for ${ticker}:`, error.message);
+      // First, get the current quote for real-time data
+      const quoteData = await this.fetchQuote(ticker);
+      if (!quoteData) {
+        return null;
       }
 
-      // Method 2: Try alternative endpoint if first one failed
-      if (!priceData) {
-        try {
-          const altResponse = await axios.get(`https://query2.finance.yahoo.com/v10/finance/quoteSummary/${ticker}`, {
-            params: {
-              modules: 'price,summaryDetail'
-            },
-            timeout: 15000,
-            headers: {
-              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-              'Accept': 'application/json, text/plain, */*',
-              'Accept-Language': 'en-US,en;q=0.9',
-              'Accept-Encoding': 'gzip, deflate, br',
-              'Connection': 'keep-alive'
-            }
-          });
-
-          if (altResponse.data?.quoteSummary?.result?.[0]) {
-            const priceModule = altResponse.data.quoteSummary.result[0].price;
-            if (priceModule) {
-              priceData = {
-                meta: { regularMarketPrice: priceModule.regularMarketPrice?.raw },
-                indicators: {
-                  quote: [{
-                    close: [priceModule.regularMarketPrice?.raw],
-                    open: [priceModule.regularMarketOpen?.raw],
-                    volume: [priceModule.regularMarketVolume?.raw]
-                  }]
-                }
-              };
-            }
-          }
-        } catch (error) {
-          console.log(`Yahoo Finance alternative API failed for ${ticker}:`, error.message);
-        }
-      }
-
-      if (!priceData) {
-        throw new Error('Unable to fetch price data from Yahoo Finance');
-      }
-
-      const quote = priceData.indicators.quote[0];
-      const meta = priceData.meta;
+      // Get historical data for percentage change calculation
+      const historicalData = await this.fetchHistoricalData(ticker, timeframe);
       
-      // Get current and previous prices
-      const currentPrice = quote.close[quote.close.length - 1] || meta.regularMarketPrice;
-      const openPrice = quote.open[quote.open.length - 1];
-      const volume = quote.volume[quote.volume.length - 1];
+      const currentPrice = parseFloat(quoteData['05. price']);
+      const openPrice = parseFloat(quoteData['02. open']);
+      const volume = parseInt(quoteData['06. volume']);
+      const previousClose = parseFloat(quoteData['08. previous close']);
       
       if (!currentPrice) {
         return null;
@@ -132,19 +74,15 @@ export class YahooFinanceProvider {
       // Store current price in cache for future percentage calculations
       this.cache.storePriceData(ticker, currentPrice);
 
-      // Calculate percentage change using smart caching strategy
+      // Calculate percentage change
       let changePercent: number;
       let previousPrice: number;
 
-      // Strategy 1: Try to get percentage from current API response
-      const apiPreviousPrice = quote.close[quote.close.length - 2] || quote.open[quote.open.length - 1];
-      if (apiPreviousPrice && apiPreviousPrice !== currentPrice) {
-        changePercent = ((currentPrice - apiPreviousPrice) / apiPreviousPrice) * 100;
-        previousPrice = apiPreviousPrice;
-        console.log(`✅ Using API percentage data for ${ticker}: ${changePercent.toFixed(2)}%`);
-      } 
-      // Strategy 2: Use cached historical data
-      else if (this.cache.hasValidPercentageData(ticker)) {
+      if (previousClose && previousClose !== currentPrice) {
+        changePercent = ((currentPrice - previousClose) / previousClose) * 100;
+        previousPrice = previousClose;
+        console.log(`✅ Using Alpha Vantage percentage data for ${ticker}: ${changePercent.toFixed(2)}%`);
+      } else if (this.cache.hasValidPercentageData(ticker)) {
         const cachedPreviousPrice = this.cache.getPreviousPrice(ticker);
         if (cachedPreviousPrice && cachedPreviousPrice !== currentPrice) {
           changePercent = this.cache.calculatePercentageChange(ticker, currentPrice);
@@ -155,18 +93,18 @@ export class YahooFinanceProvider {
           previousPrice = currentPrice;
           console.log(`⚠️ No valid previous price for ${ticker}, using 0.0% change`);
         }
-      } 
-      // Strategy 3: Fallback to 0.0% change
-      else {
+      } else {
         changePercent = 0.0;
         previousPrice = currentPrice;
         console.log(`🔄 No historical data for ${ticker}, using 0.0% change`);
       }
 
-      // Calculate day range (simplified)
+      // Calculate day range
+      const dayHigh = parseFloat(quoteData['03. high']);
+      const dayLow = parseFloat(quoteData['04. low']);
       const dayRange = {
-        low: currentPrice * 0.98,
-        high: currentPrice * 1.02
+        low: dayLow || currentPrice * 0.98,
+        high: dayHigh || currentPrice * 1.02
       };
 
       // Calculate year range (simplified)
@@ -175,83 +113,28 @@ export class YahooFinanceProvider {
         high: currentPrice * 1.3
       };
 
-      // Add a small delay to avoid rate limiting
-      await new Promise(resolve => setTimeout(resolve, 500));
+      // Add delay to respect rate limits (5 requests per minute for free tier)
+      await new Promise(resolve => setTimeout(resolve, 13000)); // 13 seconds to be safe
 
-      // Try to fetch additional financial metrics with different approach
+      // Try to fetch additional financial metrics
+      let marketCap: number | undefined;
+      let peRatio: number | undefined;
+      let beta: number | undefined;
+      let eps: number | undefined;
+      let dividendYield: number | undefined;
+
       try {
-        // Try the newer v11 endpoint first
-        const metricsResponse = await axios.get(`https://query1.finance.yahoo.com/v11/finance/quoteSummary/${ticker}`, {
-          params: {
-            modules: 'summaryDetail,financialData,defaultKeyStatistics'
-          },
-          timeout: 15000,
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': 'application/json, text/plain, */*',
-            'Accept-Language': 'en-US,en;q=0.9',
-            'Accept-Encoding': 'gzip, deflate, br',
-            'Connection': 'keep-alive',
-            'Referer': 'https://finance.yahoo.com/',
-            'Origin': 'https://finance.yahoo.com'
-          }
-        });
-
-        if (metricsResponse.data?.quoteSummary?.result?.[0]) {
-          metricsData = metricsResponse.data.quoteSummary.result[0];
+        const overviewData = await this.fetchOverview(ticker);
+        if (overviewData) {
+          marketCap = parseFloat(overviewData['MarketCapitalization']) || undefined;
+          peRatio = parseFloat(overviewData['PERatio']) || undefined;
+          beta = parseFloat(overviewData['Beta']) || undefined;
+          eps = parseFloat(overviewData['EPS']) || undefined;
+          dividendYield = parseFloat(overviewData['DividendYield']) || undefined;
         }
       } catch (error) {
-        console.log(`Yahoo Finance v11 API failed for ${ticker}:`, error.message);
-        
-        // Try alternative approach - fetch from the main page
-        try {
-          const altResponse = await axios.get(`https://query2.finance.yahoo.com/v10/finance/quoteSummary/${ticker}`, {
-            params: {
-              modules: 'price,summaryDetail'
-            },
-            timeout: 15000,
-            headers: {
-              'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-              'Accept': 'application/json, text/plain, */*',
-              'Accept-Language': 'en-US,en;q=0.9',
-              'Accept-Encoding': 'gzip, deflate, br',
-              'Connection': 'keep-alive',
-              'Referer': 'https://finance.yahoo.com/',
-              'Origin': 'https://finance.yahoo.com'
-            }
-          });
-
-          if (altResponse.data?.quoteSummary?.result?.[0]) {
-            const summaryDetail = altResponse.data.quoteSummary.result[0].summaryDetail;
-            if (summaryDetail) {
-              metricsData = {
-                summaryDetail: summaryDetail,
-                financialData: {},
-                defaultKeyStatistics: {}
-              };
-            }
-          }
-        } catch (altError) {
-          console.log(`Yahoo Finance alternative metrics API failed for ${ticker}:`, altError.message);
-        }
+        console.log(`Alpha Vantage overview API failed for ${ticker}:`, error.message);
       }
-
-      // Extract metrics with fallbacks
-      const summaryDetail = metricsData?.summaryDetail;
-      const financialData = metricsData?.financialData;
-      const defaultKeyStatistics = metricsData?.defaultKeyStatistics;
-
-      const marketCap = summaryDetail?.marketCap?.raw;
-      const dividendYield = summaryDetail?.dividendYield?.raw;
-      const peRatio = financialData?.forwardPE?.raw || financialData?.trailingPE?.raw;
-      const beta = defaultKeyStatistics?.beta?.raw;
-      const eps = financialData?.trailingEps?.raw;
-      const priceToBook = financialData?.priceToBook?.raw;
-      const debtToEquity = financialData?.debtToEquity?.raw;
-      const returnOnEquity = financialData?.returnOnEquity?.raw;
-      const profitMargin = financialData?.profitMargins?.raw;
-      const freeCashFlow = financialData?.freeCashflow?.raw;
-      const enterpriseValue = defaultKeyStatistics?.enterpriseValue?.raw;
 
       return {
         price: currentPrice,
@@ -266,17 +149,17 @@ export class YahooFinanceProvider {
         peRatio: peRatio,
         beta: beta,
         eps: eps,
-        priceToBook: priceToBook,
-        debtToEquity: debtToEquity,
-        returnOnEquity: returnOnEquity,
-        profitMargin: profitMargin,
-        revenueGrowth: null, // Simplified for now
-        earningsGrowth: null, // Simplified for now
-        freeCashFlow: freeCashFlow,
-        enterpriseValue: enterpriseValue
+        priceToBook: undefined, // Not available in Alpha Vantage free tier
+        debtToEquity: undefined, // Not available in Alpha Vantage free tier
+        returnOnEquity: undefined, // Not available in Alpha Vantage free tier
+        profitMargin: undefined, // Not available in Alpha Vantage free tier
+        revenueGrowth: undefined, // Not available in Alpha Vantage free tier
+        earningsGrowth: undefined, // Not available in Alpha Vantage free tier
+        freeCashFlow: undefined, // Not available in Alpha Vantage free tier
+        enterpriseValue: undefined // Not available in Alpha Vantage free tier
       };
     } catch (error) {
-      console.error(`Yahoo Finance API error for ${ticker}:`, error.message);
+      console.error(`Alpha Vantage API error for ${ticker}:`, error.message);
       if (error.response) {
         console.error(`Status: ${error.response.status}, Data:`, error.response.data);
       }
@@ -284,23 +167,79 @@ export class YahooFinanceProvider {
     }
   }
 
-  private mapTimeframe(timeframe: string): string {
-    switch (timeframe) {
-      case '1D': return '1m';
-      case '1W': return '5m';
-      case '1M': return '1d';
-      case '1Y': return '1d';
-      default: return '1m';
+  private async fetchQuote(ticker: string): Promise<any> {
+    const response = await axios.get('https://www.alphavantage.co/query', {
+      params: {
+        function: 'GLOBAL_QUOTE',
+        symbol: ticker,
+        apikey: this.apiKey
+      },
+      timeout: 15000
+    });
+
+    if (response.data['Error Message']) {
+      throw new Error(response.data['Error Message']);
     }
+
+    if (response.data['Note']) {
+      throw new Error('API call frequency limit reached. Please wait before making another request.');
+    }
+
+    return response.data['Global Quote'];
   }
 
-  private mapRange(timeframe: string): string {
+  private async fetchHistoricalData(ticker: string, timeframe: string): Promise<any> {
+    const functionName = this.mapTimeframeToFunction(timeframe);
+    
+    const response = await axios.get('https://www.alphavantage.co/query', {
+      params: {
+        function: functionName,
+        symbol: ticker,
+        apikey: this.apiKey,
+        outputsize: 'compact'
+      },
+      timeout: 15000
+    });
+
+    if (response.data['Error Message']) {
+      throw new Error(response.data['Error Message']);
+    }
+
+    if (response.data['Note']) {
+      throw new Error('API call frequency limit reached. Please wait before making another request.');
+    }
+
+    return response.data;
+  }
+
+  private async fetchOverview(ticker: string): Promise<any> {
+    const response = await axios.get('https://www.alphavantage.co/query', {
+      params: {
+        function: 'OVERVIEW',
+        symbol: ticker,
+        apikey: this.apiKey
+      },
+      timeout: 15000
+    });
+
+    if (response.data['Error Message']) {
+      throw new Error(response.data['Error Message']);
+    }
+
+    if (response.data['Note']) {
+      throw new Error('API call frequency limit reached. Please wait before making another request.');
+    }
+
+    return response.data;
+  }
+
+  private mapTimeframeToFunction(timeframe: string): string {
     switch (timeframe) {
-      case '1D': return '1d';
-      case '1W': return '5d';
-      case '1M': return '1mo';
-      case '1Y': return '1y';
-      default: return '1d';
+      case '1D': return 'TIME_SERIES_INTRADAY';
+      case '1W': return 'TIME_SERIES_DAILY';
+      case '1M': return 'TIME_SERIES_DAILY';
+      case '1Y': return 'TIME_SERIES_DAILY';
+      default: return 'TIME_SERIES_DAILY';
     }
   }
 }
@@ -383,24 +322,33 @@ class MockProvider {
  * Stock API Manager
  */
 export class StockApiManager {
-  private yahooProvider: YahooFinanceProvider;
+  private alphaVantageProvider: AlphaVantageProvider | null;
   private mockProvider: MockProvider;
 
   constructor() {
-    this.yahooProvider = new YahooFinanceProvider();
+    try {
+      this.alphaVantageProvider = new AlphaVantageProvider();
+    } catch (error) {
+      console.warn('Alpha Vantage provider not available:', error.message);
+      this.alphaVantageProvider = null;
+    }
     this.mockProvider = new MockProvider();
   }
 
   async fetchStockData(ticker: string, timeframe: string): Promise<StockApiResponse | null> {
-    // Try Yahoo Finance first
-    try {
-      const result = await this.yahooProvider.fetchStockData(ticker, timeframe);
-      if (result) {
-        console.log(`✅ Successfully fetched ${ticker} data from Yahoo Finance`);
-        return result;
+    // Try Alpha Vantage first if available
+    if (this.alphaVantageProvider) {
+      try {
+        const result = await this.alphaVantageProvider.fetchStockData(ticker, timeframe);
+        if (result) {
+          console.log(`✅ Successfully fetched ${ticker} data from Alpha Vantage`);
+          return result;
+        }
+      } catch (error) {
+        console.error(`❌ Alpha Vantage failed for ${ticker}:`, error.message);
       }
-    } catch (error) {
-      console.error(`❌ Yahoo Finance failed for ${ticker}:`, error.message);
+    } else {
+      console.log('Alpha Vantage provider not available, skipping...');
     }
 
     // Fallback to mock data
@@ -409,7 +357,12 @@ export class StockApiManager {
   }
 
   getProviderInfo(): string[] {
-    return ['Yahoo Finance', 'Mock Data'];
+    const providers = [];
+    if (this.alphaVantageProvider) {
+      providers.push('Alpha Vantage');
+    }
+    providers.push('Mock Data');
+    return providers;
   }
 }
 

@@ -1,0 +1,50 @@
+# Development files
+node_modules/
+.env
+.env.local
+.env.development
+.env.test
+
+# Test files
+test-*.ts
+src/test-*.ts
+*.test.ts
+*.spec.ts
+
+# Documentation
+docs/
+*.md
+!README.md
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+tmp/
+temp/
+
+# Build artifacts (will be rebuilt)
+dist/
+build/
+
+# Git
+.git/
+.gitignore
+
+# Railway specific
+railway-start.js
+railway.json
+.railwayignore
+
+
